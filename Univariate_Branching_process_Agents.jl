@@ -17,16 +17,19 @@ end
 end
 
 
-function initialize_model(nbr_HSC)
+function initialize_model(nbr_HSC,nbr_hemato)
     properties = Dict(:Time => 0)
     space = nothing 
     life = ABM(Union{HSC, hemato_cell}, space, scheduler = Schedulers.ByType(false, true, Union{HSC, hemato_cell}); properties)
 
-    first_agents = HSC.(1:nbr_HSC, trues(nbr_HSC), zeros(nbr_HSC))
-    for cell in first_agents
+    first_HSC = HSC.(1:nbr_HSC, trues(nbr_HSC), zeros(nbr_HSC))
+    first_hemato = hemato_cell.(1:nbr_hemato, zeros(nbr_hemato), zeros(nbr_hemato))
+    for cell in first_HSC 
         add_agent!(cell, life)
     end
-    #print(nagents(life))
+    for cell in first_hemato 
+        add_agent!(cell, life)
+    end
     return life
 end
 
@@ -69,11 +72,16 @@ end
 
 #fonctionne
 
+function cells_creation(model, creation_rate = 0.5)
+    create = sample(0:1, ProbabilityWeights([1 - creation_rate, creation_rate]))
+    if create == 1
+        add_agent!(hemato_cell, model, 0, 0)
+    end
+end
 
 function death_func(age, a=0.009, c=0)
     death_rate = a * age + c
 	death_prob = [death_rate, 1 - death_rate]
-    #print(death_prob) # probability of dying, and surviving
 	return sample(0:1, ProbabilityWeights(death_prob))
 end
 
@@ -104,25 +112,24 @@ function life_step!(cell::hemato_cell, model)
     
 end
 
-
-using TimerOutputs
-
+function model_step!(model)
+    model.Time += 1
+    cells_creation(model)
+end
 
 hsc(a) = typeof(a) == HSC
 hemato(a) = typeof(a) == hemato_cell
 adata = [(hsc, count), (hemato, count)]
+mdata = [:Time]
 
-to = TimerOutput()
+n_steps= 500
 df = DataFrame(step =[0], count_hsc =[0], count_hemato = [0])
-
-for n_steps in [50]
-    @timeit to ("loop"*string(n_steps)) begin 
-        life = initialize_model(1)
-        data,_ = run!(life, life_step!, n_steps; adata)  
-    end
+for _ in 1:10
+    life = initialize_model(0,1)
+    data,_ = run!(life, life_step!, model_step!, n_steps; adata, mdata)
     append!(df, data)
-end
-print(df)
-show(to)
-#plot(data.step, [data.count_hemato, data.count_hsc, data.count_hemato + data.count_hsc], labels =["HSC" "hemato" "total"])
-#plot(data.step, [data.count_hsc], labels =["HSC"])
+ end
+ pretty = [df.count_hemato[(i-1)*n_steps+i+1:((i-1)*n_steps+n_steps+1+i), : ] for i in 1:10]
+ plot(1:(n_steps+1), pretty, labels =["hemato"])
+
+#plot(data.step, [data.count_hemato, data.count_hsc, data.count_hemato + data.count_hsc], labels =["hemato" "HSC" "total"])
