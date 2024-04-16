@@ -53,9 +53,9 @@ end
     ttnd::Int : Time to next division in number of steps
     ttnt::Int : time to next transition in number of steps
 
-    stage::String : "fully_differentiated", "differentiation", "stem"
+    state::String : "fully_differentiated", "differentiation", "stem"
     age::Int : age of the cells since the last division
-    global_age::Int : number of steps since the cell left the HSC stage
+    global_age::Int : number of steps since the cell left the HSC state
     gen::Int : Number of divisions the cell underwent since it left HSC
     lineage::Array{Int, 1} : Array of integer of the form [id, step, type]
 
@@ -68,10 +68,8 @@ end
     ttnt::Real
 
 
-    stage::String 
-    time_step_next_event::Int #on va comparer ce nombre de la cellule au time step du model pour savoir si cett cellule doit subir un évènement à ce time step (permet de pas considérer toute les cellules à chaque model step)
-    age::Int
-    global_age::Int  
+    state::String 
+    time_step_next_event::Int #on va comparer ce nombre de la cellule au time step du model pour savoir si cett cellule doit subir un évènement à ce time step (permet de pas considérer toute les cellules à chaque model step)  
     gen::Int 
     lineage::Array{Int, 1} 
     
@@ -147,6 +145,14 @@ function var_ttd(distribution, parameters::Tuple{Float64, Float64}, n::Int)
     return var
 end
 
+function var_ttnt(distribution, parameters::Tuple{Float64, Float64}, n::Int)
+
+    var = rand(distribution(parameters[1], parameters[2]), n)
+    #here we are probably going to draw from a gaussian centred on 0 .
+    #ttd varies at each division 
+return var
+end
+
 function draw_ttnd(distribution, parameters::Tuple{Float64, Float64}, n::Int)
     if distribution == LogNormal
        mu = μ_for_mean(parameters[1], parameters[2])
@@ -160,13 +166,12 @@ function draw_ttnd(distribution, parameters::Tuple{Float64, Float64}, n::Int)
     return ttnd
 end
 
-function number_division(cell::HematopoeiticCell, distribution, )
 
-end
+
 #=
 HematopoeiticCell properties
 
-type::Int, ttd::Int, ttnd::Int, dd::Int, stage::String, age::Int, global_age::Int, gen::Int, lineage::Array{Int, 1} 
+type::Int, ttd::Int, ttnd::Int, dd::Int, state::String, time_step_next_event::Int, global_age::Int, gen::Int, lineage::Array{Int, 1} 
 
 =#
 function division!(model::ABM, cell::HematopoeiticCell, nbr_div::Int) #if the cell divide her generation increase of 1
@@ -190,12 +195,12 @@ function division!(model::ABM, cell::HematopoeiticCell, nbr_div::Int) #if the ce
             gen = mother_cell.gen + 1
 
         add_agent!(
-            HematopoeiticCell(ids[div][new_cell], mother_cell.type, mother_cell.ttd + v_ttd[1], ttnd[1], mother_cell.dd, mother_cell.stage, 0, mother_cell.global_age, gen, lineage),
+            HematopoeiticCell(ids[div][new_cell], mother_cell.type, mother_cell.ttd + v_ttd[1], ttnd[1], mother_cell.dd, mother_cell.state, 0, mother_cell.global_age, gen, lineage),
             model
             )
 
         add_agent!(
-            HematopoeiticCell(ids[div][new_cell + 1], mother_cell.type, mother_cell.ttd + v_ttd[2], ttnd[2], mother_cell.dd, mother_cell.stage, 0, mother_cell.global_age, gen, lineage),
+            HematopoeiticCell(ids[div][new_cell + 1], mother_cell.type, mother_cell.ttd + v_ttd[2], ttnd[2], mother_cell.dd, mother_cell.state, 0, mother_cell.global_age, gen, lineage),
             model
             )
 
@@ -214,9 +219,9 @@ end
 function division2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
      
         # un évènement de division se produit 
-    v_ttd = var_ttd(Normal, model.ttd_parameters[cell.type], 2) #Variation time to death, we should draw 2 one for each daughter cell
-    v_ttnt = var_ttnt(Normal, model.ttnt_parameters[cell.type], 2) #Variation time to next transition, we should draw 2 one for each daughter cell
-    ttnd = draw_ttnd(LogNormal, model.ttnd_parameters[cell.type], 2) #next division time
+    ttd = var_ttd(Normal, model.ttd_parameters[cell.type], 2) .+ cell.ttd #Variation time to death, we should draw 2 one for each daughter cell
+    ttnt = var_ttnt(Normal, model.ttnt_parameters[cell.type], 2) .+ cell.ttnt #Variation time to next transition, we should draw 2 one for each daughter cell
+    ttnd = draw_ttnd(LogNormal, model.ttnd_parameters[cell.type], 2) .+ model.s #next division time ( on veut le temps absolu  ou se produit la prochaine division, la distribution determine le temps entre 2 divisions)
     lineage = vcat(cell.lineage, [cell.id, model.s, cell.type])
     gen = cell.gen + 1
 
@@ -224,33 +229,31 @@ function division2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
     id_daughter_2 = id_daughter_1 + 1
     
     # on regarde quelle sera le prochain évènement des cellules filles
-    next_event_1 = findmin([cell.ttd + v_ttd[1] - cell.global_age, ttnd[1], cell.ttnt + v_ttnt[1] - cell.global_age])[2] # la fonction findmin renvoie un tuple (valeur du minimum, indice du minimum)
-    next_event_2 = findmin([cell.ttd + v_ttd[2] - cell.global_age, ttnd[2], cell.ttnt + v_ttnt[2] - cell.global_age])[2] 
+    next_event_1 = findmin([ttd[1], ttnd[1], ttnt[1]] .- model.s)[2] # la fonction findmin renvoie un tuple (valeur du minimum, indice du minimum)
+    next_event_2 = findmin([ttd[2], ttnd[2], ttnt[2]] .- model.s)[2] 
 
-    cell_stage = [next_event_1, next_event_2]
-    for event in eachindex(cell_stage)
+    cell_state = [next_event_1, next_event_2]
+    for event in eachindex(cell_state)
         #on regarde la valeur de next event en fonction on va choisir 
-        if cell_stage[event] == 1
-            cell_stage[event] = "Death"
+        if cell_state[event] == 1
+            cell_state[event] = "Death"
 
-        elseif cell_stage[event] == 2
-            cell_stage[event] = "Division"
+        elseif cell_state[event] == 2
+            cell_state[event] = "Division"
 
         else
-            cell_stage[event] = "Transition"
+            cell_state[event] = "Transition"
         end
-        
 
     end
 
     add_agent!(
-            HematopoeiticCell(id_daughter_1, cell.type, cell.ttd + v_ttd[1], ttnd[1], cell.ttnt + v_ttnt, cell_stage[1], 0, cell.global_age, gen, lineage),
+            HematopoeiticCell(id_daughter_1, cell.type, ttd[1], ttnd[1], ttnt[1], cell_state[1], floor(next_event_1[1]) + model.s, gen, lineage),
             model
         )
 
-
     add_agent!(
-            HematopoeiticCell(id_daughter_2, cell.type, cell.ttd + v_ttd[2], ttnd[2], cell.ttnt + v_ttnt, cell_stage[2], 0, cell.global_age, gen, lineage),
+            HematopoeiticCell(id_daughter_2, cell.type, ttd[2], ttnd[2], ttnt[2], cell_state[2], floor(next_event_2[1]) + model.s, cell.global_age, gen, lineage),
             model
         )
 
@@ -280,12 +283,39 @@ end
 Draws a random number according to the transition matrix and the type of the cell
 
 """
-function transition_func(cell::HematopoeiticCell, matrix::Matrix{Float64}, nbr_state::Int)
-
-    type = sample(1:nbr_state, ProbabilityWeights(matrix[cell.type, : ]))
+function transition_func(matrix_line::Matrix{Float64}, nbr_state::Int)
+    #à la place on va utiliser une categorical distribution? 
+    type = sample(1:nbr_state, ProbabilityWeights(matrix_line[ : ]))
 
     return type
 end
+
+#On va écrire un fonction qui permet de tirer selon une distribution binomial un temps jusqu'à la prochaine transition
+#Si on cellule dans le type i, on prend la ième ligne de la matrice, le ième coefficient = 1-p (probabilité d'échec) et p probabilité d'une transition vers un autre état. 
+#On s'intéresse à la distribution de probabilité d'un succès se produisant au temps t après n échec. 
+
+function transition_time_distribution(matrix_line::Vector{Float64}, cell_type::Int)
+
+    p =  sum(matrix_line) - matrix_line[cell_type]
+    distrib = [p*((1-p)^n) for n in 1:100]
+    distrib = distrib./sum(distrib)
+
+    cd = [sum(distrib[1:i]) for i in 1:length(distrib)]
+
+    return cd[1:findfirst(x -> x > 0.999, cd)]
+end
+
+
+function draw_ttnt(matrix_line::Vector{Float64}, cell_type::Int)
+    cd = transition_time_distribution(matrix_line, cell_type)
+    random_number = rand(1)[1]
+
+    index = findfirst(x -> x > random_number, cd)
+
+    return index
+end
+
+
 
 """
     transition!(cell::HematopoeiticCell: cell which is going to transition, 
@@ -297,7 +327,9 @@ The cell changes type according to the transition_func(cell, matrix, model.nbr_s
 The transition is recorded to the lineage of the cell (cell.lineage, cell.id, model.s, type are added to lineage)
 
 """
-function transition!(cell::HematopoeiticCell, model::ABM, matrix::Matrix{Float64}, nbr_state::Int)
+
+function transition!(cell::HematopoeiticCell, model::ABM, matrix::Matrix{Float64})
+    nbr_state = size(matrix)[1]
     type = transition_func(cell, matrix, nbr_state)
     if type != cell.type
         push!(cell.lineage, cell.id, model.s, type)
@@ -307,6 +339,40 @@ function transition!(cell::HematopoeiticCell, model::ABM, matrix::Matrix{Float64
     return nothing
 end
 
+
+#se produit quand le ttnt - global age est inférieur à 1 à cette time step
+function transition2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
+    
+    matrix_line = model.matrix[cell.type]
+    matrix_line[cell.type] = 0
+
+    nbr_state = length(matrix_line)
+    type = transition_func(matrix, nbr_state)
+    push!(cell.lineage, cell.id, model.s, type)
+    cell.type = type
+
+    cell.ttnt = draw_ttnt(matrix_line, type) .+ model.s #ttnt c'est le time step du modele où doit se produire la prochaine transition.
+
+    next_event = findmin([cell.ttd, cell.ttnd, cell.ttnt] .- model.s) 
+    if next_event[2] == 1
+        cell.state = "Death"
+
+    elseif next_event[2] == 2
+        cell.state = "Division"
+
+    else
+        cell.state = "Transition"
+    end
+
+    cell.time_step_next_event = floor(next_event[1]) + model.s
+
+    #on regarde si le prochain éveneemnt se produit au cours de ce time step
+    if next_event[1] < 1- event_time
+        life_step!(cell, model)
+    end
+
+
+end
 """
     model_step!(
         model : model defined with Agents.jl 
@@ -335,13 +401,15 @@ end
 """
 function life_step!(cell::HematopoeiticCell, model::ABM)
     #cell.age += 1 peut etre qu'on va plutot l'ajouter si cell ne se divise pas soit si celle transitione ou si pas d'évenement
-    cell.global_age += 1
 
-    if cell.stage == "Dividing"
+    if cell.state == "Dividing"
+        division2!(model, cell, cell.ttnd - model.s) # on fait cell.ttnd - cell.global_age - 1 car on ajoute 1 à global age juste avant
+
+    elseif cell.state == "Transition"
+        transition2!(model, cell, cell.ttnt - model.s)
     
-    elseif cell.stage == "Transition"
-    
-    elseif cell.stage == "Death"
+    elseif cell.state == "Death"
+        death!(model, cell, model.deaths)
 end
 
 
