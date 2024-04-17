@@ -25,21 +25,12 @@ function μ_for_mean(m, σ)
 end
 
 
-Base.@kwdef struct TypeParameters
-    # each of the properties has for length the number of type
-    ttd::Vector{Tuple} = [(μ_for_mean(86.66, 0.18), 0.18), (μ_for_mean(86.66, 0.18), 0.18)] #Time to death
-    ttnd::Vector{Tuple} = [(μ_for_mean(10.9, 0.23), 0.23), (μ_for_mean(86.66, 0.18), 0.18)] # Time to next division
-    dd::Vector{Tuple} = [(μ_for_mean(53.79, 0.21), 0.21), (μ_for_mean(86.66, 0.18), 0.18)] #division destiny
-end
-
-
 function initialize_distributions(typeparameters::TypeParameters, n_states::Int)
     #For now all distributions are supposed to be LogNormal
     type_distribution = [[] for _ in 1:n_states]
     for i in 1:n_states
         type_distribution[i] = [LogNormal(typeparameters.ttd[i][1], typeparameters.ttd[i][2]),
-                                LogNormal(typeparameters.ttnd[i][1], typeparameters.ttnd[i][2]),
-                                LogNormal(typeparameters.dd[i][1], typeparameters.dd[i][2])]
+                                LogNormal(typeparameters.ttnd[i][1], typeparameters.ttnd[i][2])]
     end
     return type_distribution
 end
@@ -55,8 +46,8 @@ type::Int, ttd::Int, ttnd::Int, dd::Int, stage::String, age::Int, global_age::In
 
 =#
 
-function initialize_collection(type_distributions::Vector{Vector{Any}}, collection_t0::Vector{Tuple{Int64, Int64}}, n_tot::Int)
-    # we create a vector of the form [[id, type, division_destiny, time_to_death, time_to_next_division], ...]
+function initialize_collection(type_distributions::Vector{Vector{Any}},transition_distribution::Vector{Vector{Float64}}, collection_t0::Vector{Tuple{Int64, Int64}}, n_tot::Int)
+    # we create a vector of the form [[id, type, time_to_death, time_to_next_division, time_to_next_transition], ...]
     cell_collection = [[] for _ in 1:n_tot]
     ni = 0 #the index of the last cell which received properties
 
@@ -65,33 +56,34 @@ function initialize_collection(type_distributions::Vector{Vector{Any}}, collecti
         push!.(
             cell_collection[ni + 1 : ni + n_cells], 
             [collection_t0[type][1] for _ in 1:n_cells], 
-            round.(rand(type_distributions[type][1], n_cells)), 
-            round.(rand(type_distributions[type][2], n_cells)), 
-            round.(rand(type_distributions[type][3], n_cells))
+            rand(type_distributions[type][1], n_cells), 
+            rand(type_distributions[type][2], n_cells), 
+            [draw_ttnt(transition_distribution[collection_t0[type][1]]) for _ in 1:n_cells]
             )
         ni += n_cells
     end
     return cell_collection
 end
 
-function initialize_modelparameters(nbr_state::Int, death_file::String, matrix::Matrix, typeparameters_0::TypeParameters)
-    modelparameters_0 = ModelParameters(nbr_state = nbr_state, death_file = death_file, matrix = matrix, ttnd_parameters = typeparameters_0.ttnd, ttd_parameters = typeparameters_0.ttd)
+function initialize_modelparameters(nbr_state::Int, death_file::String, matrix::Matrix, typeparameters_0::TypeParameters, transition_distribution_0::TransitionDistribution)
+    modelparameters_0 = ModelParameters(nbr_state = nbr_state, death_file = death_file, matrix = matrix, ttnd_parameters = typeparameters_0.ttnd, ttnt_parameters = transition_distribution_0.ttnt, ttd_parameters = typeparameters_0.ttd)
     
     return modelparameters_0
 end
 
 
-function initialize_model(collection_t0::Vector{Tuple{Int64, Int64}}, modelparameters_0::ModelParameters, typeparameters_0::TypeParameters, n_tot::Int) # We expect t0_cells to be an a vector of arrays , each array is a cell with given parameters (type, age, nbr_divisions)
+function initialize_model(collection_t0::Vector{Tuple{Int64, Int64}},transition_distribution::TransitionDistribution, modelparameters_0::ModelParameters, typeparameters_0::TypeParameters, n_tot::Int) # We expect t0_cells to be an a vector of arrays , each array is a cell with given parameters (type, age, nbr_divisions)
     space = nothing
 
     n_states = length(typeparameters_0.ttd)
     type_distribution_0 = initialize_distributions(typeparameters_0, n_states)
-    cell_collection_0 = initialize_collection(type_distribution_0, collection_t0, n_tot)
+    cell_collection_0 = initialize_collection(type_distribution_0, transition_distribution.ttnt, collection_t0, n_tot)
 
     life = ABM(HematopoeiticCell, space; properties = modelparameters_0)
 
-    #type::Int, ttd::Int, ttnd::Int, dd::Int, stage::String, age::Int, global_age::Int, gen::Int, lineage::Array{Int, 1} 
-
+#= type::Int ttd::Real ttnd::Real ttnt::Real   state::String  time_step_next_event::Int  gen::Int  lineage::Array{Int, 1} 
+ 
+=#
     first_cells = HematopoeiticCell.(
                                     1:n_tot,
                                     map(x -> x[1], cell_collection_0),
@@ -101,10 +93,21 @@ function initialize_model(collection_t0::Vector{Tuple{Int64, Int64}}, modelparam
                                     ["initialisation" for _ in 1:n_tot],
                                     zeros(Int, n_tot), 
                                     zeros(Int, n_tot),
-                                    zeros(Int, n_tot), 
                                     [[] for _ in 1:n_tot])
     
     for cell in  first_cells
+        next_event = findmin([cell.ttd, cell.ttnd, cell.ttnt]) 
+        if next_event[2] == 1
+            cell.state = "Death"
+
+        elseif next_event[2] == 2
+            cell.state = "Division"
+
+        else
+            cell.state = "Transition"
+        end
+
+        cell.time_step_next_event = floor(next_event[1])
         add_agent!(cell, life)
     end
 

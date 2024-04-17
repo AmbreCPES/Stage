@@ -24,12 +24,12 @@ MPP. At the MPP stage, considered a lymphoid–myeloid bifurcation point, we est
 while 1 MPP generates 4 CMPs. Given that the cell numbers also increase from HSC to ST-HSC and MPP, the
 efflux of cells exceeded influx in all of these compartments. To maintain compartment size, this flux difference is balanced by net proliferation
 =#
-Base.@kwdef struct TypeParameters1
+Base.@kwdef struct TypeParameters
     # each of the properties has for length the number of type
     ttd::Vector{Tuple} = [(μ_for_mean(86.66, 0.18), 0.18), (μ_for_mean(86.66, 0.18), 0.18)] #Time to death
     ttnd::Vector{Tuple} = [(μ_for_mean(10.9, 0.23), 0.23), (μ_for_mean(86.66, 0.18), 0.18)] # Time to next division
-    dd::Vector{Tuple} = [(μ_for_mean(53.79, 0.21), 0.21), (μ_for_mean(86.66, 0.18), 0.18)] #division destiny
 end
+
 
 # Transition Matrix = [MPP4 CLP Dendritic_cell NK B_Cell T_Cell; ]
 
@@ -40,22 +40,33 @@ transition_matrix_0 = [0.9 0.06 0.01 0.01 0.01 0.01;
                       0.0 0.0 0.0 0.0 1.0 0.0;
                       0.0 0.0 0.0 0.0 0.0 1.0]
 
+Base.@kwdef struct TransitionDistribution
+    
+    ttnt::Vector{Vector{Float64}} = [
+    transition_time_distribution(transition_matrix_0[1,:], 1),
+    transition_time_distribution(transition_matrix_0[2,:], 2),
+    transition_time_distribution(transition_matrix_0[3,:], 3),
+    transition_time_distribution(transition_matrix_0[4,:], 4),
+    transition_time_distribution(transition_matrix_0[5,:], 5),
+    transition_time_distribution(transition_matrix_0[6,:], 6)]
+end
 
 #so here n states = 2                  
 typeparameters_0 = TypeParameters()
+transition_distribution_0 = TransitionDistribution()
 n_states = length(typeparameters_0.ttd)
 
 n_tot = 30
 collection_t0 = [(1, 14), (2, 16)]
 
 type_distribution_0 = initialize_distributions(typeparameters_0, n_states)
-
-cell_collection_0 = initialize_collection(type_distribution_0, collection_t0, n_tot)
+cell_collection_0 = initialize_collection(type_distribution_0, transition_distribution_0.ttnt, collection_t0, n_tot)
 
 death_file = "C:\\Users\\ambre\\Documents\\ENS\\stage_M1\\code_1\\test_file"
-modelparameters_0 = initialize_modelparameters(6, death_file, transition_matrix_0, typeparameters_0)
+modelparameters_0 = initialize_modelparameters(6, death_file, transition_matrix_0, typeparameters_0, transition_distribution_0)
 
-life = initialize_model(collection_t0, modelparameters_0, typeparameters_0, n_tot)
+life = initialize_model(collection_t0, transition_distribution_0, modelparameters_0, typeparameters_0, n_tot)
 
-division!(life, life[1], 2)
-
+division2!(life, life[1], 2)
+transition2!(life, life[31], 2)
+death!(life, life[31], life.deaths)
