@@ -26,8 +26,8 @@ efflux of cells exceeded influx in all of these compartments. To maintain compar
 =#
 Base.@kwdef struct TypeParameters
     # each of the properties has for length the number of type
-    ttd::Vector{Tuple} = [(μ_for_mean(86.66, 0.18), 0.18), (μ_for_mean(86.66, 0.18), 0.18)] #Time to death
-    ttnd::Vector{Tuple} = [(μ_for_mean(10.9, 0.23), 0.23), (μ_for_mean(86.66, 0.18), 0.18)] # Time to next division
+    ttd::Vector{Tuple} = [(μ_for_mean(86.66, 0.18), 0.18), (μ_for_mean(86.66, 0.18), 0.18), (μ_for_mean(86.66, 0.18), 0.18), (μ_for_mean(86.66, 0.18), 0.18), (μ_for_mean(86.66, 0.18), 0.18), (μ_for_mean(86.66, 0.18), 0.18)] #Time to death
+    ttnd::Vector{Tuple} = [(μ_for_mean(10.9, 0.23), 0.23), (μ_for_mean(86.66, 0.18), 0.18), (μ_for_mean(10.9, 0.23), 0.23), (μ_for_mean(86.66, 0.18), 0.18),(μ_for_mean(10.9, 0.23), 0.23), (μ_for_mean(86.66, 0.18), 0.18)] # Time to next division
 end
 
 
@@ -67,4 +67,4 @@ modelparameters_0 = initialize_modelparameters(6, death_file, transition_matrix_
 
 life = initialize_model(collection_t0, transition_distribution_0, modelparameters_0, typeparameters_0, n_tot, ms)
 
-step!(life, life_step!, model_step!, 1)
+print(custom_run!(life, life_step!, model_step!, 100))

@@ -171,50 +171,14 @@ HematopoeiticCell properties
 type::Int, ttd::Int, ttnd::Int, dd::Int, state::String, time_step_next_event::Int, global_age::Int, gen::Int, lineage::Array{Int, 1} 
 
 =#
-function division!(model::ABM, cell::HematopoeiticCell, nbr_div::Int) #if the cell divide her generation increase of 1
-    mother_cell = cell
-    id = nextid(model)
-    ids = []
-    for i in 1:nbr_div
-        push!(ids, range(start = id, stop = (id + 2^(i) - 1), step = 1))
-        id += 2^(i)
-    end
 
-    for div in eachindex(ids)
-        id_mother_cell = 1
-        for new_cell in range(start = 1, stop =length(ids[div]), step = 2)
-            if div > 1
-                mother_cell = model[ids[div - 1][id_mother_cell]]
-            end
-            v_ttd = var_ttd(Normal, model.ttd_parameters[mother_cell.type], 2) #Variation time to death, we should draw 2 one for each daughter cell
-            ttnd = draw_ttnd(LogNormal, model.ttnd_parameters[mother_cell.type], 2) #next division time
-            lineage = vcat(mother_cell.lineage, [mother_cell.id, life.s, mother_cell.type])
-            gen = mother_cell.gen + 1
-
-        add_agent!(
-            HematopoeiticCell(ids[div][new_cell], mother_cell.type, mother_cell.ttd + v_ttd[1], ttnd[1], mother_cell.dd, mother_cell.state, 0, mother_cell.global_age, gen, lineage),
-            model
-            )
-
-        add_agent!(
-            HematopoeiticCell(ids[div][new_cell + 1], mother_cell.type, mother_cell.ttd + v_ttd[2], ttnd[2], mother_cell.dd, mother_cell.state, 0, mother_cell.global_age, gen, lineage),
-            model
-            )
-
-        remove_agent!(mother_cell, model)
-        id_mother_cell += 1
-        end
-    
-    end
-    return nothing
-end
 
 #à chaque tour on ne retire pas les paramètres des cellules, quand on réeffectue un tirage, on recompare les 3 horloges, c'est le "next_event"
 #dans la life step, si le temps de next division est le plus petit 
 #alors, on utilise division2! 
 #if ttnd - cell.age < 1 
 function division2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
-     
+    print("Division \n")
         # un évènement de division se produit 
     ttd = var_distrib(model.var_ttd[cell.type], 2) .+ cell.ttd #Variation time to death, we should draw 2 one for each daughter cell
     ttnt = var_distrib(model.var_ttnt[cell.type], 2) .+ cell.ttnt #Variation time to next transition, we should draw 2 one for each daughter cell
@@ -289,7 +253,7 @@ function transition_func(matrix::Matrix, type::Int)
         new_type = type
     else
         probability_vector = matrix[type, : ]./sum(matrix[type, : ])
-        new_type = rand(Categorical(probability_vector), 1)
+        new_type = rand(Categorical(probability_vector), 1)[1]
     end
 
     return new_type
@@ -343,14 +307,14 @@ The transition is recorded to the lineage of the cell (cell.lineage, cell.id, mo
 #se produit quand le ttnt - global age est inférieur à 1 à cette time step
 function transition2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
     
-    matrix_line = model.matrix[cell.type,:]
-    matrix_line[cell.type] = 0
+    type = transition_func(model.matrix, cell.type)
 
-    nbr_state = length(matrix_line)
-    type = transition_func(model.matrix, nbr_state)
-    push!(cell.lineage, cell.id, model.s, type)
+    lineage = vcat(cell.lineage, [cell.id, model.s, cell.type])
+    print(lineage,"\n")
+
+    print("Transition: ", cell.type," -> ", type,"\n" )
+    cell.lineage = lineage
     cell.type = type
-
     cell.ttnt = draw_ttnt(model.ttnt_parameters[cell.type]) .+ model.s #ttnt c'est le time step du modele où doit se produire la prochaine transition.
 
     next_event = findmin([cell.ttd, cell.ttnd, cell.ttnt] .- model.s) 
@@ -367,12 +331,14 @@ function transition2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
     cell.time_step_next_event = floor(next_event[1]) + model.s
 
     #on regarde si le prochain éveneemnt se produit au cours de ce time step
-    if next_event[1] < 1- event_time
+    if next_event[1] < 1 - event_time
         life_step!(cell, model)
     end
-
-
+    
+    return nothing
 end
+
+
 """
     model_step!(
         model : model defined with Agents.jl 
@@ -400,14 +366,18 @@ end
 """
 function life_step!(cell::HematopoeiticCell, model::ABM)
     #cell.age += 1 peut etre qu'on va plutot l'ajouter si cell ne se divise pas soit si celle transitione ou si pas d'évenement
-
-    if cell.state == "Dividing"
+    print("life_step!: id ", cell.id,)
+    print("   ", cell.state, "\n")
+    if cell.state == "Division"
+        print("life_step: Division \n")
         division2!(model, cell, cell.ttnd - model.s) # on fait cell.ttnd - cell.global_age - 1 car on ajoute 1 à global age juste avant
 
     elseif cell.state == "Transition"
+        print("life_step: Transition \n")
         transition2!(model, cell, cell.ttnt - model.s)
     
     elseif cell.state == "Death"
+        print("life_step: Death \n")
         death!(model, cell, model.deaths)
     end
 
@@ -453,9 +423,9 @@ end
 
 """
 
-function custom_run!(model::ABM, agent_step!::Function, model_step!::Function, n_step::Int, myscheduler)
+function custom_run!(model::ABM, agent_step!::Function, model_step!::Function, n_step::Int)
 
-    step!(model, agent_step!, model_step!, n_step; scheduler = myscheduler)
+    step!(model, agent_step!, model_step!, n_step)
 
     return custom_collect_agent_data!(model, model.adata)
 end
@@ -609,18 +579,6 @@ end
 # Function in building 
 ##########################################################################################################################################
 
-function death_time_distribution(parameters::Tuple{Float64, Float64}, distribution, n::Int)
-    if distribution == LogNormal
-        mu = μ_for_mean(parameters[1], parameters[2])
-    else 
-         mu = parameters[1]
-     end
-
-     ttd = rand(distribution(mu, parameters[2]), n)
-     #here we are going to draw from a distribution we first suppose lognormal
-     # ttnd is set at each division, we can assume it is type dependant
-     return ttd
- end
 
 
 function ms(model::ABM)
