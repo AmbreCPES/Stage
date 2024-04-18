@@ -65,8 +65,6 @@ cell_collection_0 = initialize_collection(type_distribution_0, transition_distri
 death_file = "C:\\Users\\ambre\\Documents\\ENS\\stage_M1\\code_1\\test_file"
 modelparameters_0 = initialize_modelparameters(6, death_file, transition_matrix_0, typeparameters_0, transition_distribution_0)
 
-life = initialize_model(collection_t0, transition_distribution_0, modelparameters_0, typeparameters_0, n_tot)
+life = initialize_model(collection_t0, transition_distribution_0, modelparameters_0, typeparameters_0, n_tot, ms)
 
-division2!(life, life[1], 2)
-transition2!(life, life[31], 2)
-death!(life, life[31], life.deaths)
+step!(life, life_step!, model_step!, 1)

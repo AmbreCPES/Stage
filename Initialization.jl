@@ -3,7 +3,7 @@ When cells leave the stem cell state they must be attributed characteristics whi
 =#
 include("Function_toy_model_Cyton2Framework.jl")
 
-using SpecialFunctions, Distributions, Normalization
+using SpecialFunctions, Distributions
 
 function sampling_lognorm(mu, sigma, n_cells)
 
@@ -72,14 +72,14 @@ function initialize_modelparameters(nbr_state::Int, death_file::String, matrix::
 end
 
 
-function initialize_model(collection_t0::Vector{Tuple{Int64, Int64}},transition_distribution::TransitionDistribution, modelparameters_0::ModelParameters, typeparameters_0::TypeParameters, n_tot::Int) # We expect t0_cells to be an a vector of arrays , each array is a cell with given parameters (type, age, nbr_divisions)
+function initialize_model(collection_t0::Vector{Tuple{Int64, Int64}},transition_distribution::TransitionDistribution, modelparameters_0::ModelParameters, typeparameters_0::TypeParameters, n_tot::Int, ms) # We expect t0_cells to be an a vector of arrays , each array is a cell with given parameters (type, age, nbr_divisions)
     space = nothing
 
     n_states = length(typeparameters_0.ttd)
     type_distribution_0 = initialize_distributions(typeparameters_0, n_states)
     cell_collection_0 = initialize_collection(type_distribution_0, transition_distribution.ttnt, collection_t0, n_tot)
 
-    life = ABM(HematopoeiticCell, space; properties = modelparameters_0)
+    life = StandardABM(HematopoeiticCell, space; properties = modelparameters_0, scheduler = ms)
 
 #= type::Int ttd::Real ttnd::Real ttnt::Real   state::String  time_step_next_event::Int  gen::Int  lineage::Array{Int, 1} 
  

@@ -410,6 +410,7 @@ function life_step!(cell::HematopoeiticCell, model::ABM)
     elseif cell.state == "Death"
         death!(model, cell, model.deaths)
     end
+
 end
 
 
@@ -452,9 +453,9 @@ end
 
 """
 
-function custom_run!(model::ABM, agent_step!::Function, model_step!::Function, n_step::Int)
+function custom_run!(model::ABM, agent_step!::Function, model_step!::Function, n_step::Int, myscheduler)
 
-    step!(model, agent_step!, model_step!, n_step)
+    step!(model, agent_step!, model_step!, n_step; scheduler = myscheduler)
 
     return custom_collect_agent_data!(model, model.adata)
 end
@@ -620,3 +621,13 @@ function death_time_distribution(parameters::Tuple{Float64, Float64}, distributi
      # ttnd is set at each division, we can assume it is type dependant
      return ttd
  end
+
+
+function ms(model::ABM)
+
+    ids = collect(allids(model))
+        # filter all ids whose agents have `w` less than some amount
+    filter!(id -> model[id].time_step_next_event == model.s, ids)
+    return ids
+end
+
