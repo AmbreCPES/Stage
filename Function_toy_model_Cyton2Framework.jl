@@ -34,6 +34,7 @@ We will first use this process to model Lymphocyte differentiation
 
 Base.@kwdef mutable struct ModelParameters
     s::Int = 1 
+    n_steps::Int = 365
     activation_rate::Float64 = 0.007
     adata::Vector{Symbol} = [:type, :lineage]
     deaths::DataFrame = DataFrame(id = [], type = [], lineage = [])
@@ -163,7 +164,18 @@ function draw_ttnd(distribution, parameters::Tuple{Float64, Float64}, n::Int)
     return ttnd
 end
 
+function draw_ttd(distribution, parameters::Tuple{Float64, Float64}, n::Int)
+    if distribution == LogNormal
+       mu = μ_for_mean(parameters[1], parameters[2])
+    else 
+        mu = parameters[1]
+    end
+    ttd = rand(distribution(mu, parameters[2]), n)[1]
 
+    #here we are going to draw from a distribution we first suppose lognormal
+    # ttnd is set at each division, we can assume it is type dependant
+    return ttd
+end
 
 #=
 HematopoeiticCell properties
@@ -178,7 +190,6 @@ type::Int, ttd::Int, ttnd::Int, dd::Int, state::String, time_step_next_event::In
 #alors, on utilise division2! 
 #if ttnd - cell.age < 1 
 function division2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
-    print("Division \n")
         # un évènement de division se produit 
     ttd = var_distrib(model.var_ttd[cell.type], 2) .+ cell.ttd #Variation time to death, we should draw 2 one for each daughter cell
     ttnt = var_distrib(model.var_ttnt[cell.type], 2) .+ cell.ttnt #Variation time to next transition, we should draw 2 one for each daughter cell
@@ -310,14 +321,14 @@ function transition2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
     type = transition_func(model.matrix, cell.type)
 
     lineage = vcat(cell.lineage, [cell.id, model.s, cell.type])
-    print(lineage,"\n")
 
-    print("Transition: ", cell.type," -> ", type,"\n" )
     cell.lineage = lineage
     cell.type = type
     cell.ttnt = draw_ttnt(model.ttnt_parameters[cell.type]) .+ model.s #ttnt c'est le time step du modele où doit se produire la prochaine transition.
 
+    cell.ttd = draw_ttd(LogNormal, model.ttd_parameters[cell.type], 1) .+ model.s
     next_event = findmin([cell.ttd, cell.ttnd, cell.ttnt] .- model.s) 
+
     if next_event[2] == 1
         cell.state = "Death"
 
@@ -366,18 +377,18 @@ end
 """
 function life_step!(cell::HematopoeiticCell, model::ABM)
     #cell.age += 1 peut etre qu'on va plutot l'ajouter si cell ne se divise pas soit si celle transitione ou si pas d'évenement
-    print("life_step!: id ", cell.id,)
-    print("   ", cell.state, "\n")
+    #print("life_step!: id ", cell.id,)
+    #print("   ", cell.state, "\n")
     if cell.state == "Division"
-        print("life_step: Division \n")
+        #print("life_step: Division \n")
         division2!(model, cell, cell.ttnd - model.s) # on fait cell.ttnd - cell.global_age - 1 car on ajoute 1 à global age juste avant
 
     elseif cell.state == "Transition"
-        print("life_step: Transition \n")
+        #print("life_step: Transition \n")
         transition2!(model, cell, cell.ttnt - model.s)
     
     elseif cell.state == "Death"
-        print("life_step: Death \n")
+        #print("life_step: Death \n")
         death!(model, cell, model.deaths)
     end
 
@@ -423,10 +434,10 @@ end
 
 """
 
-function custom_run!(model::ABM, agent_step!::Function, model_step!::Function, n_step::Int)
+function custom_run!(model::ABM, agent_step!::Function, model_step!::Function, n::Function)
 
-    step!(model, agent_step!, model_step!, n_step)
-
+    step!(model, agent_step!, model_step!, n)
+    print("Number of steps: ", model.s, "\n")
     return custom_collect_agent_data!(model, model.adata)
 end
 
@@ -589,3 +600,16 @@ function ms(model::ABM)
     return ids
 end
 
+function n(model, s)
+    while s < model.n_steps
+
+        if length(allids(model)) == 0
+            return true
+        else
+            return false
+        end
+
+    end
+    return true
+
+end
