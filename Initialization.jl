@@ -1,5 +1,6 @@
 #= 
-When cells leave the stem cell state they must be attributed characteristics which will define their fate
+When cells leave the stem cell state they must be attributed characteristics which will define their fate. In this file, we define functions to attribute 
+initial parameters to cell. 
 =#
 include("Function_toy_model_Cyton2Framework.jl")
 
@@ -13,13 +14,15 @@ end
 #= For each type, we have 3 distributions:
     - time to death
     - time to next division
-    - division destiny
+    - time to next transition
 
 We store it in the form of a stuct of properties: distribution's parameters time to death, distribution's parameters time to next division, distribution's parameters division destin
 Parameters are in Tuple, the length of the tuple depends on the nature of the distribution
 The index of the vector corresponds to its type. 
 
 =#
+
+
 function μ_for_mean(m, σ)
     return log(m) - σ^2/2
 end
@@ -29,8 +32,8 @@ function initialize_distributions(typeparameters::TypeParameters, n_states::Int)
     #For now all distributions are supposed to be LogNormal
     type_distribution = [[] for _ in 1:n_states]
     for i in 1:n_states
-        type_distribution[i] = [LogNormal(typeparameters.ttd[i][1], typeparameters.ttd[i][2]),
-                                LogNormal(typeparameters.ttnd[i][1], typeparameters.ttnd[i][2])]
+        type_distribution[i] = [LogNormal(μ_for_mean(typeparameters.ttd[i][1], typeparameters.ttd[i][2]),typeparameters.ttd[i][2]) ,
+                                LogNormal(μ_for_mean(typeparameters.ttnd[i][1], typeparameters.ttnd[i][2]), typeparameters.ttnd[i][2])]
     end
     return type_distribution
 end
@@ -58,7 +61,7 @@ function initialize_collection(type_distributions::Vector{Vector{Any}},transitio
             [collection_t0[type][1] for _ in 1:n_cells], 
             rand(type_distributions[type][1], n_cells), 
             rand(type_distributions[type][2], n_cells), 
-            [draw_ttnt(transition_distribution[collection_t0[type][1]]) for _ in 1:n_cells]
+            [draw_ttnt(transition_distribution[collection_t0[type][1]], 1000) for _ in 1:n_cells]
             )
         ni += n_cells
     end
@@ -107,7 +110,7 @@ function initialize_model(collection_t0::Vector{Tuple{Int64, Int64}},transition_
             cell.state = "Transition"
         end
 
-        cell.time_step_next_event = floor(next_event[1])
+        cell.time_next_event = floor(next_event[1])
         add_agent!(cell, life)
     end
 

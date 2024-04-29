@@ -33,8 +33,8 @@ We will first use this process to model Lymphocyte differentiation
 """
 
 Base.@kwdef mutable struct ModelParameters
-    s::Int = 1 
-    n_steps::Int = 365
+    s::Int = 0
+    n_steps::Int = 2000
     activation_rate::Float64 = 0.007
     adata::Vector{Symbol} = [:type, :lineage]
     deaths::DataFrame = DataFrame(id = [], type = [], lineage = [])
@@ -46,9 +46,9 @@ Base.@kwdef mutable struct ModelParameters
     ttnt_parameters::Vector{Vector{Float64}} = []
     ttd_parameters::Vector{Tuple{Float64, Float64}} =  []
 
-    var_ttnd::Vector{Float64} = [0.005, 0.005, 0.005, 0.005, 0.005, 0.005]
-    var_ttnt::Vector{Float64} = [0.005, 0.005, 0.005, 0.005, 0.005, 0.005]
-    var_ttd::Vector{Float64} = [0.005, 0.005, 0.005, 0.005, 0.005, 0.005]
+    var_ttnd::Vector{Float64} = [0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005]
+    var_ttnt::Vector{Float64} = [0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005]
+    var_ttd::Vector{Float64} = [0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005]
 end
 
 """
@@ -74,7 +74,7 @@ end
 
 
     state::String 
-    time_step_next_event::Int #on va comparer ce nombre de la cellule au time step du model pour savoir si cett cellule doit subir un évènement à ce time step (permet de pas considérer toute les cellules à chaque model step)  
+    time_next_event::Real #on va comparer le floor de ce nombre de la cellule au time step du model pour savoir si cett cellule doit subir un évènement à ce time step (permet de pas considérer toute les cellules à chaque model step)  
     gen::Int 
     lineage::Array{Int, 1} 
     
@@ -190,55 +190,59 @@ type::Int, ttd::Int, ttnd::Int, dd::Int, state::String, time_step_next_event::In
 #alors, on utilise division2! 
 #if ttnd - cell.age < 1 
 function division2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
-        # un évènement de division se produit 
+    # un évènement de division se produit 
+    
     ttd = var_distrib(model.var_ttd[cell.type], 2) .+ cell.ttd #Variation time to death, we should draw 2 one for each daughter cell
     ttnt = var_distrib(model.var_ttnt[cell.type], 2) .+ cell.ttnt #Variation time to next transition, we should draw 2 one for each daughter cell
-    ttnd = draw_ttnd(LogNormal, model.ttnd_parameters[cell.type], 2) .+ model.s #next division time ( on veut le temps absolu  ou se produit la prochaine division, la distribution determine le temps entre 2 divisions)
+    ttnd = draw_ttnd(LogNormal, model.ttnd_parameters[cell.type], 2) .+ model.s .+ event_time  #next division time ( on veut le temps absolu  ou se produit la prochaine division, la distribution determine le temps entre 2 divisions)
     lineage = vcat(cell.lineage, [cell.id, model.s, cell.type])
     gen = cell.gen + 1
 
     id_daughter_1 = nextid(model)
-    id_daughter_2 = id_daughter_1 + 1
+    id_daughter = [id_daughter_1, id_daughter_1 + 1]
     
     # on regarde quelle sera le prochain évènement des cellules filles
-    next_event_1 = findmin([ttd[1], ttnd[1], ttnt[1]] .- model.s)[2] # la fonction findmin renvoie un tuple (valeur du minimum, indice du minimum)
-    next_event_2 = findmin([ttd[2], ttnd[2], ttnt[2]] .- model.s)[2] 
+    next_event_1 = findmin([ttd[1] - event_time, ttnd[1], ttnt[1] - event_time]) # la fonction findmin renvoie un tuple (valeur du minimum, indice du minimum)
+    next_event_2 = findmin([ttd[2] - event_time, ttnd[2], ttnt[2] - event_time])
 
-    cell_state = [next_event_1, next_event_2]
-    new_cell_state =["", ""]
+    cell_state = [next_event_1[2], next_event_2[2]]
+
     for event in eachindex(cell_state)
         #on regarde la valeur de next event en fonction on va choisir 
         if cell_state[event] == 1
-            new_cell_state[event] = "Death"
+            add_agent!(
+            HematopoeiticCell(id_daughter[event], cell.type, ttd[event], ttnd[event], ttnt[event],"Death" , ttd[event], gen, lineage),
+            model
+        )
 
         elseif cell_state[event] == 2
-            new_cell_state[event] = "Division"
+            add_agent!(
+            HematopoeiticCell(id_daughter[event], cell.type, ttd[event], ttnd[event], ttnt[event],"Division" ,ttnd[event] , gen, lineage),
+            model
+        )
 
         else
-            new_cell_state[event] = "Transition"
+            add_agent!(
+            HematopoeiticCell(id_daughter[event], cell.type, ttd[event], ttnd[event], ttnt[event], "Transition", ttnt[event], gen, lineage),
+            model
+        )
         end
 
     end
 
-    add_agent!(
-            HematopoeiticCell(id_daughter_1, cell.type, ttd[1], ttnd[1], ttnt[1], new_cell_state[1], floor(next_event_1[1]) + model.s, gen, lineage),
-            model
-        )
-
-    add_agent!(
-            HematopoeiticCell(id_daughter_2, cell.type, ttd[2], ttnd[2], ttnt[2], new_cell_state[2], floor(next_event_2[1]) + model.s, gen, lineage),
-            model
-        )
-
     remove_agent!(cell, model)
         
     #on regarde si une des cellules filles a un évènement qui se produit avant la fin de cette time step (se produit dans un temps égal à 1 - event_time)
-    if next_event_1[1] < (1 - event_time)
-        life_step!(model[id_daughter_1], model)
+    #print("next event time =  ", next_event_1[1], "  1 - event_time = ", 1 - event_time, "\n")
+    if next_event_1[1] < model.s + 1
+        #print("sub life step division2! cell1 \n" )
+        life_step!(model[id_daughter[1]], model)
     end
 
-    if next_event_2[1] < (1 - event_time)
-        life_step!(model[id_daughter_2], model)
+    #print("next event time =  ", next_event_2[1], "  1 - event_time = ", 1 - event_time, "\n")
+    if next_event_2[1] < model.s + 1
+        #print("sub life step division2! cell2 \n")
+        life_step!(model[id_daughter[2]], model)
     end
 
     return nothing
@@ -276,11 +280,14 @@ end
 #On s'intéresse à la distribution de probabilité d'un succès se produisant au temps t après n échec. 
 
 function transition_time_distribution(matrix_line::Vector{Float64}, cell_type::Int)
+
+    #This is actually a geometric distribution!
     if matrix_line[cell_type] == 1.0
         return [0]
     else
-        p =  sum(matrix_line) - matrix_line[cell_type]
-        distrib = [p*((1-p)^n) for n in 1:100]
+        p = sum(matrix_line) - matrix_line[cell_type]
+        print("p = ", p, "\n")
+        distrib = [p*((1-p)^n) for n in range(start=0, stop=100, step=0.001)]
         distrib = distrib./sum(distrib)
 
         cd = [sum(distrib[1:i]) for i in 1:length(distrib)]
@@ -290,16 +297,18 @@ function transition_time_distribution(matrix_line::Vector{Float64}, cell_type::I
 end
 
 
-function draw_ttnt(transition_distribution::Vector{Float64})
+function draw_ttnt(transition_distribution::Vector{Float64}, step::Int)
     
     random_numbers = rand(1)[1]
 
     index = findfirst(x -> x > random_numbers, transition_distribution)
+
     if typeof(index) == Nothing
-        index = 10000 #just a very big number  => transition never happens
+        print("\n not possible to draw ttnt: transition distribution = ", transition_distribution)
+        index = 10000000000 #just a very big number  => transition never happens
     end
 
-    return index
+    return index/step
 end
 
 
@@ -316,7 +325,7 @@ The transition is recorded to the lineage of the cell (cell.lineage, cell.id, mo
 """
 
 #se produit quand le ttnt - global age est inférieur à 1 à cette time step
-function transition2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
+function transition2!(model::ABM, cell::HematopoeiticCell, event_time::Real, step::Int)
     
     type = transition_func(model.matrix, cell.type)
 
@@ -324,25 +333,31 @@ function transition2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
 
     cell.lineage = lineage
     cell.type = type
-    cell.ttnt = draw_ttnt(model.ttnt_parameters[cell.type]) .+ model.s #ttnt c'est le time step du modele où doit se produire la prochaine transition.
 
-    cell.ttd = draw_ttd(LogNormal, model.ttd_parameters[cell.type], 1) .+ model.s
-    next_event = findmin([cell.ttd, cell.ttnd, cell.ttnt] .- model.s) 
+    #cell.ttnd doesn't change it's the time which change so we compare the other time to this one minus event_time
+    #but if this event is the next to happend it's time of occurence doesn't change
+    #for the other one we had event time because the event of drawing a  new number does not occur at model.s but at model.s + event_time !!! (and what we draw is the time between now and the next event)
+    cell.ttnt = draw_ttnt(model.ttnt_parameters[cell.type], step) .+ model.s .+ event_time #ttnt c'est le time step du modele où doit se produire la prochaine transition.
+
+    cell.ttd = draw_ttd(LogNormal, model.ttd_parameters[cell.type], 1) .+ model.s .+ event_time
+    next_event = findmin([cell.ttd, cell.ttnd - event_time, cell.ttnt]) 
 
     if next_event[2] == 1
         cell.state = "Death"
+        cell.time_next_event = cell.ttd
 
     elseif next_event[2] == 2
         cell.state = "Division"
+        cell.time_next_event = cell.ttnd
 
     else
         cell.state = "Transition"
+        cell.time_next_event = cell.ttnt
     end
 
-    cell.time_step_next_event = floor(next_event[1]) + model.s
-
     #on regarde si le prochain éveneemnt se produit au cours de ce time step
-    if next_event[1] < 1 - event_time
+    print("cell id = ", cell.id, " next event time =  ", cell.time_next_event)
+    if cell.time_next_event < model.s + 1
         life_step!(cell, model)
     end
     
@@ -359,9 +374,10 @@ define how the model evolves to the next time step
 
 """
 function model_step!(model::ABM)
-    CSV.write(model.death_file, model.deaths, append = true)
-    empty!(model.deaths)
-    model.s += 1
+
+    CSV.write(model.death_file, model.deaths, append = true) #the data of cell which died during this time step is written in a file
+    empty!(model.deaths) #dataframe which stores death during one time step is emptied
+    model.s += 1 #increase of one of the time step
 
     return nothing
 end
@@ -372,26 +388,26 @@ end
         model : model defined with Agents.jl 
         )
 
-    define how an agent evolves to the next time step
+    Define how an agent evolves to the next time step. 
+    life_step is applied to cells which will undergo one of three event during this time step: Division, Transition or Death
 
 """
 function life_step!(cell::HematopoeiticCell, model::ABM)
-    #cell.age += 1 peut etre qu'on va plutot l'ajouter si cell ne se divise pas soit si celle transitione ou si pas d'évenement
-    #print("life_step!: id ", cell.id,)
-    #print("   ", cell.state, "\n")
+
     if cell.state == "Division"
-        #print("life_step: Division \n")
+        print("cell id = ", cell.id, "event time = ", cell.ttnd - model.s,"\n")
         division2!(model, cell, cell.ttnd - model.s) # on fait cell.ttnd - cell.global_age - 1 car on ajoute 1 à global age juste avant
 
     elseif cell.state == "Transition"
-        #print("life_step: Transition \n")
-        transition2!(model, cell, cell.ttnt - model.s)
+        print("event time = ", cell.ttnt - model.s,"\n")
+        transition2!(model, cell, cell.ttnt - model.s, 1000)
     
     elseif cell.state == "Death"
-        #print("life_step: Death \n")
+        print("cell id = ", cell.id, "event time = ", cell.ttd - model.s,"\n")
         death!(model, cell, model.deaths)
-    end
 
+    end
+    return cell.id
 end
 
 
@@ -425,11 +441,11 @@ end
         model: A model as defined in Agents.jl which is evolved by the function,
         agent_step!: a function which determines how each agent will evolve to the next step,
         model_step!: a function which determines how the model will evolve to the next step
-        n_step : number of steps to run the model over
+        n : a function, the model runs until it returns true 
         )
 
     This methods is a modified version of the run! method defined in Agents.jl, we define this function because we don't need to collect information at each time step.
-    We collect information about each agent at the model.n_step (model property) time step.
+    We collect information about each agent alive at the last time step.
 
 
 """
@@ -513,8 +529,6 @@ function get_adj_list_all_cells2(data, last_id, death_file)
     
         L_cell = length(lineage_data)
     
-        
-
         for i in range(start = L_cell - 2, stop = 4, step = -3)
             print("  ", i)
             if lineage_data[i] != lineage_data[i - 3] 
@@ -528,7 +542,6 @@ function get_adj_list_all_cells2(data, last_id, death_file)
                 end
             end
         end
-        print("\n")
 
         if lineage_data[L_cell - 2] != cell_data[cell, :id]
             push!(adj_list[lineage_data[L_cell - 2]], cell_data[cell, :id])
@@ -596,7 +609,7 @@ function ms(model::ABM)
 
     ids = collect(allids(model))
         # filter all ids whose agents have `w` less than some amount
-    filter!(id -> model[id].time_step_next_event == model.s, ids)
+    filter!(id -> floor(model[id].time_next_event) == model.s, ids)
     return ids
 end
 
