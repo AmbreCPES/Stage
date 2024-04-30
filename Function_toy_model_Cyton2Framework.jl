@@ -12,7 +12,7 @@ We will first use this process to model Lymphocyte differentiation
 =#
 
 ##########################################################################################################################################
-# Defining model parameters and agents type
+# Model and agents parameters
 ##########################################################################################################################################
 """
    ModelParameters
@@ -34,7 +34,7 @@ We will first use this process to model Lymphocyte differentiation
 
 Base.@kwdef mutable struct ModelParameters
     s::Int = 0
-    n_steps::Int = 2000
+    n_steps::Int = 40
     activation_rate::Float64 = 0.007
     adata::Vector{Symbol} = [:type, :lineage]
     deaths::DataFrame = DataFrame(id = [], type = [], lineage = [])
@@ -81,13 +81,133 @@ end
 end
 
 
+#On va écrire un fonction qui permet de tirer selon une distribution binomial un temps jusqu'à la prochaine transition
+#Si on cellule dans le type i, on prend la ième ligne de la matrice, le ième coefficient = 1-p (probabilité d'échec) et p probabilité d'une transition vers un autre état. 
+#On s'intéresse à la distribution de probabilité d'un succès se produisant au temps t après n échec. 
+"""
+    transition_time_distribution(
+        matrix_line::Vector{Float64} : line in the transition matrix corresponding to the type of the cell, 
+        cell_type::Int : type of the cell.
+
+        stop::Int = 100 : the maximum number of step before transition, 
+        step::Float64 = 0.001 : the time between 2 points in the cumulative distribution
+        )
+
+Setting of the transition time discrete cumulative distribution given with the transition matrix.
+Probability distribution corresponds to the probability a transition occurs for the first time. probability to transition is equal to 1 - probability to stay in the same state.
+
+"""
+function transition_time_distribution(matrix_line::Vector{Float64}, cell_type::Int; stop::Int = 100, step::Float64 = 0.001)
+
+    if matrix_line[cell_type] == 1.0
+        return [0]
+    else
+        p = sum(matrix_line) - matrix_line[cell_type]
+        #print("p = ", p, "\n")
+        distrib = [p*((1-p)^n) for n in range(start=0, stop=stop, step=step)]
+        distrib = distrib./sum(distrib)
+
+        cd = [sum(distrib[1:i]) for i in 1:length(distrib)]
+
+        return cd[1:findfirst(x -> x > 0.999, cd)]
+    end
+end
+
 ##########################################################################################################################################
-# Defining functions to evolve model and agents each step
+# Functions to evolve agents at each step
 ##########################################################################################################################################
 
-###########
-# TO TEST
-###########
+#We define function to draw time to death, time to transition and time to division but also to perturb these time
+
+"""
+    var_distrib(
+        parameters::Float64 : standart deviation of the gaussian given the cell type, 
+        n::Int : number of number generated
+    )
+
+This methods allow to add a Gaussian perturbation to a Time (ttd, ttnd or ttnt).
+"""
+function var_distrib(parameters::Float64, n::Int)
+
+    var = rand(Normal(0, parameters), n)
+    #here we are probably going to draw from a gaussian centred on 0 .
+    #ttd varies at each division 
+return var
+end
+
+
+"""
+    draw_ttnd(
+        distribution: a continuous distribution defined in Distributions.jl (often LogNormal), 
+        parameters::Tuple{Float64, Float64} : (mu, sigma) the parameters of the distribution (parameters are cell type dependant), 
+        n::Int : number of ttnd we wish to draw from this distribution
+        )
+
+Function to draw a new time to next division. We draw the time between to division given a cell type.
+New ttnd are drawn at each division.
+
+"""
+function draw_ttnd(distribution, parameters::Tuple{Float64, Float64}, n::Int)
+if distribution == LogNormal
+   mu = μ_for_mean(parameters[1], parameters[2])
+else 
+    mu = parameters[1]
+end
+ttnd = rand(distribution(mu, parameters[2]), n)
+
+#here we are going to draw from a distribution we first suppose lognormal
+# ttnd is set at each division, we can assume it is type dependant
+return ttnd
+end
+
+"""
+    draw_ttd(
+        distribution: a continuous distribution defined in Distributions.jl (often LogNormal), 
+        parameters::Tuple{Float64, Float64} : (mu, sigma) the parameters of the distribution (parameters are cell type dependant), 
+        n::Int : number of ttnd we wish to draw from this distribution
+        )
+
+Function to draw a new time to death. We draw the time to death for a cell type.
+A new ttd is drawn at each transition.
+
+"""
+function draw_ttd(distribution, parameters::Tuple{Float64, Float64}, n::Int)
+if distribution == LogNormal
+   mu = μ_for_mean(parameters[1], parameters[2])
+else 
+    mu = parameters[1]
+end
+ttd = rand(distribution(mu, parameters[2]), n)[1]
+
+#here we are going to draw from a distribution we first suppose lognormal
+# ttnd is set at each division, we can assume it is type dependant
+return ttd
+end
+"""
+    draw_ttnt(
+        transition_distribution::Vector{Float64} : discrete cumulative distribution of the transition time for a cell type, 
+        step::Int : the time between 2 points in the cumulative distribution
+        )
+
+Function to draw a new time to next transition. We draw the time to transition for a cell type.
+A new ttnt is drawn at each transition.
+
+"""
+function draw_ttnt(transition_distribution::Vector{Float64}, step::Int)
+    
+    random_numbers = rand(1)[1]
+
+    index = findfirst(x -> x > random_numbers, transition_distribution)
+
+    if typeof(index) == Nothing
+        #print("\n not possible to draw ttnt: transition distribution = ", transition_distribution)
+        index = 10000000000 #just a very big number  => transition never happens
+    end
+
+    return index/step
+end
+
+
 """
     cells_creation!(
         model : the model where the cells will be added,
@@ -113,10 +233,13 @@ function cells_creation!(model::ABM, pool::Vector{Vector}, activation_rate::Floa
 end
 
 
+#We define function for cell event: death, division, transition
+
 """
     death!(
         cell::HematopoeiticCell : the cell which will be removed from the model,
-        model: the model from which the cell is drawn
+        model:: ABM : model from which the cell is removed
+        deaths::DataFrame : DataFrame to which the parameters of the dead cells will be added
     )
 
 Remove cell from the model and record these information: [cell.id, cell.type, cell.lineage] in a DataFrame
@@ -124,58 +247,13 @@ Remove cell from the model and record these information: [cell.id, cell.type, ce
 """
 
 function death!(model::ABM, cell::HematopoeiticCell, deaths::DataFrame)
+    cell.lineage = vcat(cell.lineage, [cell.id, model.s, cell.type])
     push!(deaths, [cell.id, cell.type, cell.lineage])  
     remove_agent!(cell, model)
 
 	return nothing
 end
 
-"""
-    division!(
-        cell::HematopoeiticCell : a cell which is dividing,
-        model : the model where the cell is
-        )
-
-Create two cells with parameters of the dividing cell and remove the dividing cell from the model.
-We add [cell.id, model.s, cell.type] and the lineage of the mother cell and the sum is given to daughter cells.
-The dividing time of each daughter cell is drawn from shifted exponential distribution.
-
-"""
-
-function var_distrib(parameters::Float64, n::Int)
-
-        var = rand(Normal(0, parameters), n)
-        #here we are probably going to draw from a gaussian centred on 0 .
-        #ttd varies at each division 
-    return var
-end
-
-
-function draw_ttnd(distribution, parameters::Tuple{Float64, Float64}, n::Int)
-    if distribution == LogNormal
-       mu = μ_for_mean(parameters[1], parameters[2])
-    else 
-        mu = parameters[1]
-    end
-    ttnd = rand(distribution(mu, parameters[2]), n)
-
-    #here we are going to draw from a distribution we first suppose lognormal
-    # ttnd is set at each division, we can assume it is type dependant
-    return ttnd
-end
-
-function draw_ttd(distribution, parameters::Tuple{Float64, Float64}, n::Int)
-    if distribution == LogNormal
-       mu = μ_for_mean(parameters[1], parameters[2])
-    else 
-        mu = parameters[1]
-    end
-    ttd = rand(distribution(mu, parameters[2]), n)[1]
-
-    #here we are going to draw from a distribution we first suppose lognormal
-    # ttnd is set at each division, we can assume it is type dependant
-    return ttd
-end
 
 #=
 HematopoeiticCell properties
@@ -183,12 +261,20 @@ HematopoeiticCell properties
 type::Int, ttd::Int, ttnd::Int, dd::Int, state::String, time_step_next_event::Int, global_age::Int, gen::Int, lineage::Array{Int, 1} 
 
 =#
+"""
+    division2!(
+        model::ABM : model in which the cell divides, 
+        cell::HematopoeiticCell : cell which divides, 
+        event_time::Real : Float64 in [0;1], the time in the time step when the event occurs
+    )
 
+2 daughter cell are created. They inherit their ttd, ttnt from the mother cells (+- gaussian perturbation) and are attributed a new time to next division which differs
+between the daughter from gaussian perturbation.
 
-#à chaque tour on ne retire pas les paramètres des cellules, quand on réeffectue un tirage, on recompare les 3 horloges, c'est le "next_event"
-#dans la life step, si le temps de next division est le plus petit 
-#alors, on utilise division2! 
-#if ttnd - cell.age < 1 
+We determine the next event of the cells: "Death", "Division", "Transition" and their time.
+If the next event is due to happen before the next time step (cell.time_next_event < model.s + 1) then the cell undergoes a life_step!
+
+"""
 function division2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
     # un évènement de division se produit 
     
@@ -232,16 +318,11 @@ function division2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
 
     remove_agent!(cell, model)
         
-    #on regarde si une des cellules filles a un évènement qui se produit avant la fin de cette time step (se produit dans un temps égal à 1 - event_time)
-    #print("next event time =  ", next_event_1[1], "  1 - event_time = ", 1 - event_time, "\n")
     if next_event_1[1] < model.s + 1
-        #print("sub life step division2! cell1 \n" )
         life_step!(model[id_daughter[1]], model)
     end
 
-    #print("next event time =  ", next_event_2[1], "  1 - event_time = ", 1 - event_time, "\n")
     if next_event_2[1] < model.s + 1
-        #print("sub life step division2! cell2 \n")
         life_step!(model[id_daughter[2]], model)
     end
 
@@ -252,9 +333,8 @@ end
 
 """
     transition_func(
-        cell::HematopoeiticCell : the cell which is going to transition, 
-        matrix::Matrix{Float64} : the transition matrix, 
-        nbr_state::Int : the number of possible states for a cell
+        matrix::Matrix{Float64} : the transition matrix of the model, 
+        type::Int : type of the cell which is transitionning
         )
 
 Draws a random number according to the transition matrix and the type of the cell
@@ -275,43 +355,6 @@ function transition_func(matrix::Matrix, type::Int)
     
 end
 
-#On va écrire un fonction qui permet de tirer selon une distribution binomial un temps jusqu'à la prochaine transition
-#Si on cellule dans le type i, on prend la ième ligne de la matrice, le ième coefficient = 1-p (probabilité d'échec) et p probabilité d'une transition vers un autre état. 
-#On s'intéresse à la distribution de probabilité d'un succès se produisant au temps t après n échec. 
-
-function transition_time_distribution(matrix_line::Vector{Float64}, cell_type::Int)
-
-    #This is actually a geometric distribution!
-    if matrix_line[cell_type] == 1.0
-        return [0]
-    else
-        p = sum(matrix_line) - matrix_line[cell_type]
-        print("p = ", p, "\n")
-        distrib = [p*((1-p)^n) for n in range(start=0, stop=100, step=0.001)]
-        distrib = distrib./sum(distrib)
-
-        cd = [sum(distrib[1:i]) for i in 1:length(distrib)]
-
-        return cd[1:findfirst(x -> x > 0.999, cd)]
-    end
-end
-
-
-function draw_ttnt(transition_distribution::Vector{Float64}, step::Int)
-    
-    random_numbers = rand(1)[1]
-
-    index = findfirst(x -> x > random_numbers, transition_distribution)
-
-    if typeof(index) == Nothing
-        print("\n not possible to draw ttnt: transition distribution = ", transition_distribution)
-        index = 10000000000 #just a very big number  => transition never happens
-    end
-
-    return index/step
-end
-
-
 
 """
     transition!(cell::HematopoeiticCell: cell which is going to transition, 
@@ -324,7 +367,6 @@ The transition is recorded to the lineage of the cell (cell.lineage, cell.id, mo
 
 """
 
-#se produit quand le ttnt - global age est inférieur à 1 à cette time step
 function transition2!(model::ABM, cell::HematopoeiticCell, event_time::Real, step::Int)
     
     type = transition_func(model.matrix, cell.type)
@@ -366,23 +408,6 @@ end
 
 
 """
-    model_step!(
-        model : model defined with Agents.jl 
-        )
-
-define how the model evolves to the next time step
-
-"""
-function model_step!(model::ABM)
-
-    CSV.write(model.death_file, model.deaths, append = true) #the data of cell which died during this time step is written in a file
-    empty!(model.deaths) #dataframe which stores death during one time step is emptied
-    model.s += 1 #increase of one of the time step
-
-    return nothing
-end
-
-"""
     life_step!(
         cell::HematopoeiticCell : type of agent defined with Agents.jl, 
         model : model defined with Agents.jl 
@@ -395,21 +420,89 @@ end
 function life_step!(cell::HematopoeiticCell, model::ABM)
 
     if cell.state == "Division"
-        print("cell id = ", cell.id, "event time = ", cell.ttnd - model.s,"\n")
+        #print("cell id = ", cell.id, "event time = ", cell.ttnd - model.s,"\n")
         division2!(model, cell, cell.ttnd - model.s) # on fait cell.ttnd - cell.global_age - 1 car on ajoute 1 à global age juste avant
 
     elseif cell.state == "Transition"
-        print("event time = ", cell.ttnt - model.s,"\n")
+        #print("event time = ", cell.ttnt - model.s,"\n")
         transition2!(model, cell, cell.ttnt - model.s, 1000)
     
     elseif cell.state == "Death"
-        print("cell id = ", cell.id, "event time = ", cell.ttd - model.s,"\n")
+        #print("cell id = ", cell.id, "event time = ", cell.ttd - model.s,"\n")
         death!(model, cell, model.deaths)
 
     end
     return cell.id
 end
 
+
+
+
+
+##########################################################################################################################################
+# Functions for model evolution
+##########################################################################################################################################
+
+
+"""
+    ms(
+        model::ABM : an ABM from Agents.jl
+    )
+
+A scheduler which determines the cell which will undergo life_step! at each model_step!.
+Every cell with an event scheduled during the current time step (floor(cell.time_next_event) == model.s) is scheduled to undergo life_step at the current time step
+
+"""
+
+function ms(model::ABM)
+
+    ids = collect(allids(model))
+        # filter all ids whose agents have `w` less than some amount
+    filter!(id -> floor(model[id].time_next_event) == model.s, ids)
+    return ids
+end
+
+
+"""
+    n(
+        model::ABM : an ABM from Agents.jl,
+        s::Int : the current time step
+    )
+    
+n determines the number of steps the model will run for. While n returns false, the model run.
+Here the model runs while there are cells alive. Even if cells are still alive, it will stop at the max time step, model.n_steps
+"""
+function n(model, s)
+    while s < model.n_steps
+
+        if length(allids(model)) == 0
+            return true
+        else
+            return false
+        end
+
+    end
+    return true
+
+end
+"""
+    model_step!(
+        model : model defined with Agents.jl 
+        )
+
+define how the model evolves to the next time step
+
+"""
+function model_step!(model::ABM)
+    for cell in allids(model)
+        print("id = ",model[cell].id, " next_event = ", model[cell].state)
+    end
+    CSV.write(model.death_file, model.deaths, append = true) #the data of cell which died during this time step is written in a file
+    empty!(model.deaths) #dataframe which stores death during one time step is emptied
+    model.s += 1 #increase of one of the time step
+
+    return nothing
+end
 
 
 ##########################################################################################################################################
@@ -602,27 +695,16 @@ end
 ##########################################################################################################################################
 # Function in building 
 ##########################################################################################################################################
+function cell_count(data::DataFrame, death_file::String, types::Vector{Int}, last_id::Int)
+    deaths = DataFrame(CSV.File(death_file))
+    cells_data = vcat(data, deaths)
+    cells_number = Dict{Int, Vector{Int}}(0 for _ in 1:last_id)
 
-
-
-function ms(model::ABM)
-
-    ids = collect(allids(model))
-        # filter all ids whose agents have `w` less than some amount
-    filter!(id -> floor(model[id].time_next_event) == model.s, ids)
-    return ids
-end
-
-function n(model, s)
-    while s < model.n_steps
-
-        if length(allids(model)) == 0
-            return true
-        else
-            return false
+    cell_to_count = [i for i in 1:last_id]
+    while length(counted_cell) > 0 & nrow(cells_data) > 0
+        if cells_data[1,:id] in cell_to_count
+            deleteat!(cell_to_count, 1)
         end
-
-    end
-    return true
-
+    end 
+    return cells_number #a dict with key the type and associated a vector with the number of cell of this type at each time step
 end
