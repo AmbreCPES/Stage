@@ -647,6 +647,64 @@ function get_adj_list_all_cells2(data, last_id, death_file)
     return adj_list, division_type
 end
 
+function cell_count(data::DataFrame, death_file::String, cell_type::Vector{Int}, last_time_step::Int)
+    deaths = DataFrame(CSV.File(death_file))
+    cells_data = deepcopy(data)
+    cells_data = vcat(cells_data, deepcopy(deaths))
+    print(1)
+    sort!(cells_data, :id, rev = true)
+    print(2)
+    last_id = cells_data[1,:id]
+    cells_number = Dict{Int, Vector{Int}}(type => zeros(last_time_step) for type in cell_type)
+    cell_to_count = [string(i)*"_"*string(type) for i in 1:last_id for type in cell_type]
+    print(4)
+    for cell in 1:nrow(cells_data)
+        
+        if cells_data[cell, :id] in data[!, :id]
+            cells_data[cell, :lineage] = vcat(cells_data[cell, :lineage], [cells_data[cell, :id],last_time_step, cells_data[cell, :type]])
+        else
+            cells_data[cell, :lineage] = parse.(Int, split(chop(cells_data[cell, :lineage], head = 1, tail = 1), ","))
+        end
+    
+        lineage = cells_data[cell,:lineage]
+    
+        type = lineage[length(lineage)]
+        time = lineage[length(lineage) - 1]
+        id = lineage[length(lineage) - 2]
+    
+            if length(lineage) >= 6
+                for i in range(start = (length(lineage) - 5), stop = 0, step = -3)
+                    
+                    if string(id)*"_"*string(type) in cell_to_count
+                        cells_number[type][(lineage[i + 1] + 1):time] = cells_number[type][(lineage[i + 1] + 1):time] .+ 1
+                        filter!(!=(string(id)*"_"*string(type)), cell_to_count)
+                    else
+                        break
+                    end
+                    
+                    type = lineage[i + 2]
+                    time = lineage[i + 1]
+                    id = lineage[i]
+                end
+                if string(id)*"_"*string(type) in cell_to_count
+                    cells_number[lineage[3]][1:time] = cells_number[lineage[3]][1:time] .+ 1
+                    filter!(!=(string(id)*"_"*string(type)), cell_to_count)
+                end
+            
+            elseif length(lineage) == 3
+                if string(id)*"_"*string(type) in cell_to_count
+                    
+                    cells_number[lineage[3]][1:time] = cells_number[lineage[3]][1:time] .+ 1
+                    filter!(!=(string(id)*"_"*string(type)), cell_to_count)
+                end
+            end
+        
+    end
+    
+    
+    return cells_number #a dict with key the type and associated a vector with the number of cell of this type at each time step
+end
+
 
 ###########
 # TO TEST
@@ -695,16 +753,4 @@ end
 ##########################################################################################################################################
 # Function in building 
 ##########################################################################################################################################
-function cell_count(data::DataFrame, death_file::String, types::Vector{Int}, last_id::Int)
-    deaths = DataFrame(CSV.File(death_file))
-    cells_data = vcat(data, deaths)
-    cells_number = Dict{Int, Vector{Int}}(0 for _ in 1:last_id)
 
-    cell_to_count = [i for i in 1:last_id]
-    while length(counted_cell) > 0 & nrow(cells_data) > 0
-        if cells_data[1,:id] in cell_to_count
-            deleteat!(cell_to_count, 1)
-        end
-    end 
-    return cells_number #a dict with key the type and associated a vector with the number of cell of this type at each time step
-end
