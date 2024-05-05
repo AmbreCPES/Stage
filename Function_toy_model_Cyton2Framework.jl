@@ -112,6 +112,7 @@ function transition_time_distribution(matrix_line::Vector{Float64}, cell_type::I
     end
 end
 
+
 ##########################################################################################################################################
 # Functions to evolve agents at each step
 ##########################################################################################################################################
@@ -205,6 +206,21 @@ function draw_ttnt(transition_distribution::Vector{Float64}, step::Int)
     return index/step
 end
 
+function draw_ttnt2(matrix_line::Vector{Float64}, cell_type::Int)
+
+    if matrix_line[cell_type] == 1.0
+        return [0]
+    else
+        p = 1 - matrix_line[cell_type] #probability of success
+        #Initialization exponential distriution 
+        theta = −(log(1 − p))
+        x =rand(1)[1]
+        
+       ttnt = -log(1 - x)/theta 
+
+        return [ttnt, x]
+    end
+end
 
 """
     cells_creation!(
@@ -339,16 +355,16 @@ Draws a random number according to the transition matrix and the type of the cel
 
 """
 function transition_func(matrix::Matrix, type::Int)
-    
-    matrix[type,type] = 0
-
-    if sum(matrix[type, : ]) == 0
-        new_type = type
+    if sum(matrix[type,:]) != 1
+        return error("la matrice de transition n'est pas une matrice de probabilité")
     else
-        probability_vector = matrix[type, : ]./sum(matrix[type, : ])
-        new_type = rand(Categorical(probability_vector), 1)[1]
+        if sum(matrix[type, : ]) - matrix[type,type] == 0
+            new_type = type
+        else
+            probability_vector = matrix[type, : ]./sum(matrix[type, : ])
+            new_type = rand(Categorical(probability_vector), 1)[1]
+        end
     end
-
     return new_type
     
 end
@@ -365,7 +381,7 @@ The transition is recorded to the lineage of the cell (cell.lineage, cell.id, mo
 
 """
 
-function transition2!(model::ABM, cell::HematopoeiticCell, event_time::Real, step::Int)
+function transition2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
     
     type = transition_func(model.matrix, cell.type)
 
@@ -377,8 +393,7 @@ function transition2!(model::ABM, cell::HematopoeiticCell, event_time::Real, ste
     #cell.ttnd doesn't change it's the time which change so we compare the other time to this one minus event_time
     #but if this event is the next to happend it's time of occurence doesn't change
     #for the other one we had event time because the event of drawing a  new number does not occur at model.s but at model.s + event_time !!! (and what we draw is the time between now and the next event)
-    cell.ttnt = draw_ttnt(model.ttnt_parameters[cell.type], step) .+ model.s .+ event_time #ttnt c'est le time step du modele où doit se produire la prochaine transition.
-
+    cell.ttnt = draw_ttnt2(model.matrix[cell.type,:], cell.type)[1] + model.s + event_time #ttnt c'est le time step du modele où doit se produire la prochaine transition.
     cell.ttd = draw_ttd(LogNormal, model.ttd_parameters[cell.type], 1) .+ model.s .+ event_time
     next_event = findmin([cell.ttd, cell.ttnd - event_time, cell.ttnt]) 
 
@@ -420,7 +435,7 @@ function life_step!(cell::HematopoeiticCell, model::ABM)
         division2!(model, cell, cell.ttnd - model.s) # on fait cell.ttnd - cell.global_age - 1 car on ajoute 1 à global age juste avant
 
     elseif cell.state == "Transition"
-        transition2!(model, cell, cell.ttnt - model.s, 1000)
+        transition2!(model, cell, cell.ttnt - model.s)
     
     elseif cell.state == "Death"
         death!(model, cell, model.deaths)
@@ -541,11 +556,4 @@ function custom_run!(model::ABM, agent_step!::Function, model_step!::Function, n
 
     return custom_collect_agent_data!(model, model.adata)
 end
-
-
-
-
-##########################################################################################################################################
-# Function in building 
-##########################################################################################################################################
 
