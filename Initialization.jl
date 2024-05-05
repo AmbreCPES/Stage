@@ -49,7 +49,7 @@ type::Int, ttd::Int, ttnd::Int, dd::Int, stage::String, age::Int, global_age::In
 
 =#
 
-function initialize_collection(type_distributions::Vector{Vector{Any}},transition_distribution::Vector{Vector{Float64}}, collection_t0::Vector{Tuple{Int64, Int64}}, n_tot::Int)
+function initialize_collection(type_distributions::Vector{Vector{Any}},transition_matrix::Matrix, collection_t0::Vector{Tuple{Int64, Int64}}, n_tot::Int)
     # we create a vector of the form [[id, type, time_to_death, time_to_next_division, time_to_next_transition], ...]
     cell_collection = [[] for _ in 1:n_tot]
     ni = 0 #the index of the last cell which received properties
@@ -61,26 +61,26 @@ function initialize_collection(type_distributions::Vector{Vector{Any}},transitio
             [collection_t0[type][1] for _ in 1:n_cells], 
             rand(type_distributions[type][1], n_cells), 
             rand(type_distributions[type][2], n_cells), 
-            [draw_ttnt(transition_distribution[collection_t0[type][1]], 1000) for _ in 1:n_cells]
+            [draw_ttnt2(transition_matrix[collection_t0[type][1],:], collection_t0[type][1])[1] for _ in 1:n_cells]
             )
         ni += n_cells
     end
     return cell_collection
 end
 
-function initialize_modelparameters(nbr_state::Int, death_file::String, matrix::Matrix, typeparameters_0::TypeParameters, transition_distribution_0::TransitionDistribution)
-    modelparameters_0 = ModelParameters(nbr_state = nbr_state, death_file = death_file, matrix = matrix, ttnd_parameters = typeparameters_0.ttnd, ttnt_parameters = transition_distribution_0.ttnt, ttd_parameters = typeparameters_0.ttd)
+function initialize_modelparameters(n_steps::Int, nbr_state::Int, death_file::String, matrix::Matrix, typeparameters_0::TypeParameters)
+    modelparameters_0 = ModelParameters(n_steps = n_steps, s = 0, nbr_state = nbr_state, death_file = death_file, matrix = matrix, ttnd_parameters = typeparameters_0.ttnd, ttd_parameters = typeparameters_0.ttd)
     
     return modelparameters_0
 end
 
 
-function initialize_model(collection_t0::Vector{Tuple{Int64, Int64}},transition_distribution::TransitionDistribution, modelparameters_0::ModelParameters, typeparameters_0::TypeParameters, n_tot::Int, ms) # We expect t0_cells to be an a vector of arrays , each array is a cell with given parameters (type, age, nbr_divisions)
+function initialize_model(collection_t0::Vector{Tuple{Int64, Int64}}, transition_matrix::Matrix, modelparameters_0::ModelParameters, typeparameters_0::TypeParameters, n_tot::Int, ms) # We expect t0_cells to be an a vector of arrays , each array is a cell with given parameters (type, age, nbr_divisions)
     space = nothing
 
     n_states = length(typeparameters_0.ttd)
     type_distribution_0 = initialize_distributions(typeparameters_0, n_states)
-    cell_collection_0 = initialize_collection(type_distribution_0, transition_distribution.ttnt, collection_t0, n_tot)
+    cell_collection_0 = initialize_collection(type_distribution_0, transition_matrix, collection_t0, n_tot)
 
     life = StandardABM(HematopoeiticCell, space; properties = modelparameters_0, scheduler = ms)
 
@@ -110,7 +110,7 @@ function initialize_model(collection_t0::Vector{Tuple{Int64, Int64}},transition_
             cell.state = "Transition"
         end
 
-        cell.time_next_event = floor(next_event[1])
+        cell.time_next_event = next_event[1]
         add_agent!(cell, life)
     end
 
@@ -119,22 +119,6 @@ function initialize_model(collection_t0::Vector{Tuple{Int64, Int64}},transition_
     return life
 end
 
-
-"""
-set_transition_distrib(parameters::Vector{Tuple})
-
-    parameters::Vector{Tuple} : vector of the form [(type, mu, sigma), ...]
-
-    this function initialise a Dict of Gaussian distribution given the parameters
-
-"""                     
-function set_transition_distrib(parameters::Vector)
-    transition_distrib = Dict()
-    for i in parameters
-        transition_distrib[i[1]] = Normal(i[2], i[3])
-    end
-    return transition_distrib
-end
 
 """
 set_transition_matrix!(
