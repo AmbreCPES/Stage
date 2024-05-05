@@ -2,6 +2,12 @@ parameters_file = ""
 output_file = ""
 output_death_file = ""
 
+if ARGS != nothing
+    parameters_file = ARGS[1]
+    output_file = ARGS[2]
+    output_death_file = ARGS[3]
+end
+
 Base.@kwdef struct TypeParameters
     # each of the properties has for length the number of type
     ttd::Vector{Tuple} = [(10000.0, 0.2), (330.0, 0.2), (70.0, 0.2), (60.0, 0.2), (1.1, 0.2)] #Time to death
@@ -48,6 +54,7 @@ if parameters_file == ""
 
 else
     include(parameters_file)
+    
     if @isdefined(transition_matrix_0) == false
         error("\n transition_matrix_0 is not defined in parameters_file")
     end

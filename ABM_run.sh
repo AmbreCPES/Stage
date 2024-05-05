@@ -49,23 +49,24 @@ done
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 	
 #Création fichier log 
-LOG=/Users/ambre/Documents/ENS/stage_M1/code_1/log
-OUT=/Users/ambre/Documents/ENS/stage_M1/code_1
-SCRIPT=/Users/ambre/Documents/ENS/stage_M1/code_1/execute_run_ABM.jl
+LOG=/home/ajaeger/Documents/githubrepos/Stage/log
+OUT=/home/ajaeger/Documents/githubrepos/Stage
+SCRIPT=/home/ajaeger/Documents/githubrepos/Stage/execute_run_ABM.jl
 
 if [ ! -d $LOG ] ; then mkdir $LOG ; fi
-if [ -d {OUT}/Param_${param}/parameters_file_${param}] ; then parameters_file="${OUT}/Param_${param}/parameters_file_${param}"
+if [ ! -d $LOG/Param_${param} ] ; then mkdir $LOG/Param_${param} ; fi
+if [ -f ${OUT}/Param_${param}/parameters_file_${param}.txt ] ; then parameters_file="${OUT}/Param_${param}/parameters_file_${param}.txt" ; fi
+
 
 for ((ind=1; ind<=nbr_runs; ind++))
 do
 	if [ ! -d ${OUT}/Param_${param}/output_run_${ind} ]
 	then 
 
-	(echo "Run de ABM") > $LOG/ 2>&1
 	output_file="${OUT}/Param_${param}/output_run_${ind}"
 	output_death_file="${OUT}/Param_${param}/output_death_run_${ind}"
 
-	(julia -d parameters_file=$parameters_file -d output_file=$output_file -d output_death_file=$output_death_file $SCRIPT) >> $LOG/run_${ind}  2>&1
+	(julia --project=./MyProject $SCRIPT $parameters_file $output_file $output_death_file) >> $LOG//Param_${param}/run_${ind}  2>&1
 
 	fi
 done
