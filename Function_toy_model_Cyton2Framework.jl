@@ -209,7 +209,7 @@ end
 function draw_ttnt2(matrix_line::Vector{Float64}, cell_type::Int)
 
     if matrix_line[cell_type] == 1.0
-        return [0]
+        return [10000]
     else
         p = 1 - matrix_line[cell_type] #probability of success
         #Initialization exponential distriution 
@@ -355,13 +355,15 @@ Draws a random number according to the transition matrix and the type of the cel
 
 """
 function transition_func(matrix::Matrix, type::Int)
+    matrix_line = matrix[type,:]
+    matrix_line[type] = 0
     if sum(matrix[type,:]) != 1
         return error("la matrice de transition n'est pas une matrice de probabilité")
     else
-        if sum(matrix[type, : ]) - matrix[type,type] == 0
+        if sum(matrix_line) == 0
             new_type = type
         else
-            probability_vector = matrix[type, : ]./sum(matrix[type, : ])
+            probability_vector = matrix_line./sum(matrix_line)
             new_type = rand(Categorical(probability_vector), 1)[1]
         end
     end
