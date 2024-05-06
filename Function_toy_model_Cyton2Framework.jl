@@ -76,7 +76,7 @@ end
     state::String 
     time_next_event::Real #on va comparer le floor de ce nombre de la cellule au time step du model pour savoir si cett cellule doit subir un évènement à ce time step (permet de pas considérer toute les cellules à chaque model step)  
     gen::Int 
-    lineage::Array{Int, 1} 
+    lineage::Array{Float64, 1} 
     
 end
 
@@ -261,7 +261,7 @@ Remove cell from the model and record these information: [cell.id, cell.type, ce
 """
 
 function death!(model::ABM, cell::HematopoeiticCell, deaths::DataFrame)
-    cell.lineage = vcat(cell.lineage, [cell.id, model.s, cell.type])
+    cell.lineage = vcat(cell.lineage, [cell.id, round(cell.ttd, digits = 3), cell.type])
     push!(deaths, [cell.id, cell.type, cell.lineage])  
     remove_agent!(cell, model)
 
@@ -295,7 +295,7 @@ function division2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
     ttd = var_distrib(model.var_ttd[cell.type], 2) .+ cell.ttd #Variation time to death, we should draw 2 one for each daughter cell
     ttnt = var_distrib(model.var_ttnt[cell.type], 2) .+ cell.ttnt #Variation time to next transition, we should draw 2 one for each daughter cell
     ttnd = draw_ttnd(LogNormal, model.ttnd_parameters[cell.type], 2) .+ model.s .+ event_time  #next division time ( on veut le temps absolu  ou se produit la prochaine division, la distribution determine le temps entre 2 divisions)
-    lineage = vcat(cell.lineage, [cell.id, model.s, cell.type])
+    lineage = [vcat(cell.lineage, [cell.id, round(cell.ttnd, digits = 3), cell.type]), [cell.id, round(cell.ttnd, digits = 3), cell.type]]
     gen = cell.gen + 1
 
     id_daughter_1 = nextid(model)
@@ -311,19 +311,19 @@ function division2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
         #on regarde la valeur de next event en fonction on va choisir 
         if cell_state[event] == 1
             add_agent!(
-            HematopoeiticCell(id_daughter[event], cell.type, ttd[event], ttnd[event], ttnt[event],"Death" , ttd[event], gen, lineage),
+            HematopoeiticCell(id_daughter[event], cell.type, ttd[event], ttnd[event], ttnt[event],"Death" , ttd[event], gen, lineage[event]),
             model
         )
 
         elseif cell_state[event] == 2
             add_agent!(
-            HematopoeiticCell(id_daughter[event], cell.type, ttd[event], ttnd[event], ttnt[event],"Division" ,ttnd[event] , gen, lineage),
+            HematopoeiticCell(id_daughter[event], cell.type, ttd[event], ttnd[event], ttnt[event],"Division" ,ttnd[event] , gen, lineage[event]),
             model
         )
 
         else
             add_agent!(
-            HematopoeiticCell(id_daughter[event], cell.type, ttd[event], ttnd[event], ttnt[event], "Transition", ttnt[event], gen, lineage),
+            HematopoeiticCell(id_daughter[event], cell.type, ttd[event], ttnd[event], ttnt[event], "Transition", ttnt[event], gen, lineage[event]),
             model
         )
         end
@@ -387,7 +387,7 @@ function transition2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
     
     type = transition_func(model.matrix, cell.type)
 
-    lineage = vcat(cell.lineage, [cell.id, model.s, cell.type])
+    lineage = vcat(cell.lineage, [cell.id, round(cell.ttnt, digits = 3), cell.type])
 
     cell.lineage = lineage
     cell.type = type

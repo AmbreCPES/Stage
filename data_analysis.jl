@@ -30,7 +30,7 @@ function get_adj_list_all_cells(data::DataFrame, last_id::Int, death_file::Strin
         end
         lineage_data = cell_data[cell, :lineage]
     
-        sort!(cell_data, :id)
+        sort!(cell_data,:id)
     
         L_cell = length(lineage_data)
     
@@ -66,7 +66,7 @@ function get_adj_list_all_cells2(data, last_id, death_file)
         end
         lineage_data = cell_data[cell, :lineage]
     
-        sort!(cell_data, :id)
+        sort!(cell_data,:id)
     
         L_cell = length(lineage_data)
     
@@ -95,7 +95,7 @@ function get_adj_list_all_cells2(data, last_id, death_file)
     return adj_list, division_type
 end
 
-function cell_count(data::DataFrame, death_file::String, cell_type::Vector{Int}, last_time_step::Int)
+function cell_count(data::DataFrame, death_file::String, cell_type::Vector{Int}, last_time_step::Int, nbr_start_cell::Int)
     deaths = DataFrame(CSV.File(death_file))
     cells_data = deepcopy(data)
     cells_data = vcat(cells_data, deepcopy(deaths))
@@ -132,7 +132,7 @@ function cell_count(data::DataFrame, death_file::String, cell_type::Vector{Int},
                     time = lineage[i + 1]
                     id = lineage[i]
                 end
-                if string(id)*"_"*string(type) in cell_to_count
+                if (string(id)*"_"*string(type) in cell_to_count) & (id <= nbr_start_cell)
                     cells_number[lineage[3]][1:time] = cells_number[lineage[3]][1:time] .+ 1
                     filter!(!=(string(id)*"_"*string(type)), cell_to_count)
                 end
@@ -151,6 +151,58 @@ function cell_count(data::DataFrame, death_file::String, cell_type::Vector{Int},
     return cells_number #a dict with key the type and associated a vector with the number of cell of this type at each time step
 end
 
+
+
+function cell_count2(data::DataFrame, death_file::String, cell_type::Vector{Int}, last_time_step::Int, nbr_start_cell::Int)
+    deaths = DataFrame(CSV.File(death_file))
+    cells_data = deepcopy(data)
+    cells_data = vcat(cells_data, deepcopy(deaths))
+    sort!(cells_data, :id, rev = true)
+    cells_number = Dict{Int, Vector{Int}}(type => zeros(last_time_step + 1) for type in cell_type)
+    cell_to_count = [string(i)*"_"*string(type) for i in 1:nbr_start_cell for type in cell_type]
+    
+    for cell in 1:nrow(cells_data)
+        
+        if cells_data[cell, :id] in data[!, :id]
+            cells_data[cell, :lineage] = vcat(cells_data[cell, :lineage], [cells_data[cell, :id], last_time_step, cells_data[cell, :type]])
+        else
+            cells_data[cell, :lineage] = parse.(Float64, split(chop(cells_data[cell, :lineage], head = 1, tail = 1), ","))
+        end
+    
+        lineage = cells_data[cell,:lineage]
+    
+        type = Int(lineage[length(lineage)])
+        time = Int(floor(lineage[length(lineage) - 1]))
+        id = Int(lineage[length(lineage) - 2])
+    
+            if length(lineage) >= 6
+                for i in range(start = (length(lineage) - 5), stop = 0, step = -3)
+                        
+                    cells_number[type][(Int(floor(lineage[i + 1])) + 1):(time+1)] = cells_number[type][(Int(floor(lineage[i + 1])) + 1):(time+1)] .+ 1
+                    
+                    type = Int(lineage[i + 2])
+                    time = Int(Int(floor(lineage[i + 1])))
+                    id = Int(lineage[i])
+                end
+
+                if (string(id)*"_"*string(type) in cell_to_count)
+                    cells_number[type][1:time] = cells_number[type][1:time] .+ 1
+                    filter!(!=(string(id)*"_"*string(type)), cell_to_count)
+                end
+            
+            elseif length(lineage) == 3
+                if string(id)*"_"*string(type) in cell_to_count
+                    
+                    cells_number[type][1:time] = cells_number[type][1:time] .+ 1
+                    filter!(!=(string(id)*"_"*string(type)), cell_to_count)
+                end
+            end
+        
+    end
+    
+    
+    return cells_number #a dict with key the type and associated a vector with the number of cell of this type at each time step
+end
 
 ###########
 # TO TEST
