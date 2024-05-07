@@ -484,7 +484,7 @@ n determines the number of steps the model will run for. While n returns false, 
 Here the model runs while there are cells alive. Even if cells are still alive, it will stop at the max time step, model.n_steps
 """
 function n(model, s)
-    while s < model.n_steps
+    while s < (model.n_steps-1)
 
         if length(allids(model)) == 0
             return true

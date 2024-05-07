@@ -204,6 +204,64 @@ function cell_count2(data::DataFrame, death_file::String, cell_type::Vector{Int}
     return cells_number #a dict with key the type and associated a vector with the number of cell of this type at each time step
 end
 
+function precision_cell_count(data::DataFrame, death_file::String, cell_type::Vector{Int}, last_time_step::Int, nbr_start_cell::Int, precision::Float64)
+
+    deaths = DataFrame(CSV.File(death_file)) 
+    cells_data = vcat(deepcopy(data), deepcopy(deaths))
+    sort!(cells_data, :id)
+    cells_number = Dict{Int, Vector{Int}}(type => zeros(length(range(start = 0, stop = last_time_step + 1, step = precision))) for type in cell_type)
+    cell_to_count = [i for i in 1:nbr_start_cell]
+    
+    for cell in 1:nrow(cells_data)
+        
+        if cells_data[cell, :id] in data[!, :id]
+            cells_data[cell, :lineage] = vcat(cells_data[cell, :lineage], [cells_data[cell, :id], last_time_step, cells_data[cell, :type]])
+            #print("\n cell alive : ", cells_data[cell, :id], " with lineage : ", cells_data[cell, :lineage])
+        elseif cells_data[cell, :id] in deaths[!, :id]
+            cells_data[cell, :lineage] = parse.(Float64, split(chop(cells_data[cell, :lineage], head = 1, tail = 1), ","))
+            #print("\n cell dead : ", cells_data[cell, :id], " with lineage : ", cells_data[cell, :lineage])
+        else
+            #print("\n mais d'ou vient cette cellule ?: ", cells_data[cell, :id] )
+        end
+      
+        lineage = cells_data[cell,:lineage]
+        #print("lineage =", lineage)
+    
+        type = Int(lineage[length(lineage)])
+        time = Int(floor(lineage[length(lineage) - 1]*(1/precision))+(1/precision))
+        id = Int(lineage[length(lineage) - 2])
+
+        #print("\n time = ", time)
+    
+            if length(lineage) >= 6
+                for i in range(start = (length(lineage) - 5), stop = 0, step = -3)
+                    
+                
+                    cells_number[type][(Int(floor(lineage[i + 1]*(1/precision)) + (1/precision))):(time-1)] = cells_number[type][(Int(floor(lineage[i + 1]*(1/precision)) + 1/precision)):(time-1)] .+ 1
+                    #print("\n time interval = ", Int(floor(lineage[i + 1]*(1/precision)) + (1/precision)):time)
+                    type = Int(lineage[i + 2])
+                    time = Int(floor(lineage[i + 1]*(1/precision))+Int(1/precision))
+                    id = Int(lineage[i])
+                end
+                print("\n", cell_to_count)
+                if id in cell_to_count
+                    cells_number[type][1:(time-1)] = cells_number[type][1:(time-1)] .+ 1
+                    #print("\n first time interval = ", (1:(time-1)))
+                    filter!(!=(id), cell_to_count)
+                    print("\n",id)
+                end
+            
+            elseif length(lineage) == 3
+                if id in cell_to_count
+                    cells_number[type][1:(time)] = cells_number[type][1:(time)] .+ 1
+                    filter!(!=(id), cell_to_count)
+                end
+            end
+        
+    end
+    return cells_number
+end
+
 ###########
 # TO TEST
 ###########
