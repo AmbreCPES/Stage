@@ -1,11 +1,13 @@
 parameters_file = ""
 output_file = ""
 output_death_file = ""
+n_steps = 100
 
 if ARGS != nothing
-    parameters_file = ARGS[1]
-    output_file = ARGS[2]
-    output_death_file = ARGS[3]
+    n_steps=parse(Int64, ARGS[1])
+    parameters_file = ARGS[2]
+    output_file = ARGS[3]
+    output_death_file = ARGS[4]
 end
 
 Base.@kwdef struct TypeParameters
@@ -13,12 +15,6 @@ Base.@kwdef struct TypeParameters
     ttd::Vector{Tuple} = [(10000.0, 0.2), (330.0, 0.2), (70.0, 0.2), (60.0, 0.2), (1.1, 0.2)] #Time to death
     ttnd::Vector{Tuple} = [(110, 0.1), (1/0.042, 0.2), (0.25, 0.1), (86.66, 0.18), (10.9, 0.23)] # Time to next division
 end
-
-Base.@kwdef struct TransitionDistribution
-    
-    ttnt::Vector{Vector{Float64}} = []
-end
-
 
 include("Initialization.jl")
 
@@ -77,6 +73,8 @@ else
     end
 end
 
+
+
 n_tot = sum([collection_t0[x][2] for x in eachindex(collection_t0)])
 typeparameters_0 = TypeParameters(ttd = ttd_0, ttnd = ttnd_0)
 
@@ -84,6 +82,7 @@ if size(transition_matrix_0)[1] == length(typeparameters_0.ttd) == length(typepa
 
     modelparameters_0 = initialize_modelparameters(n_steps, size(transition_matrix_0)[1], output_death_file, transition_matrix_0, typeparameters_0)
     life = initialize_model(collection_t0, transition_matrix_0, modelparameters_0, typeparameters_0, n_tot, ms)
+    print("\n ", modelparameters_0)
 
     data = custom_run!(life, life_step!, model_step!, n)
     CSV.write(output_file, data)
