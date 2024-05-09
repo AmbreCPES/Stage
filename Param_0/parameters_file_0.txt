@@ -1,8 +1,8 @@
-#transition matrix test
+#File must include transition_matrix_0, collection_t0, ttd_0 and ttnd_0
+#This file will be read in julia using include("parameters_file_0.txt), and therefore must respect Julia's writting 
+
+
 transition_matrix_0 = [0.991 0.009 0.0 0.0 0.0; 0.0 0.9844827586206897 0.015517241379310345 0.0 0.0; 0.0 0.0 0.554 0.0024444444444444444 0.44355555555555554; 0.0 0.0 0.0 1.0 0.0; 0.0 0.0 0.0 0.0 1.0]
 collection_t0 = [(1,10), (2,20)]
 ttd_0 = [(10000.0, 0.2), (330.0, 0.2), (70.0, 0.2), (60.0, 0.2), (1.1, 0.2)]
 ttnd_0 = [(110, 0.1), (1/0.042, 0.2), (0.25, 0.1), (86.66, 0.18), (10.9, 0.23)] 
-n_steps = 100
-
-
