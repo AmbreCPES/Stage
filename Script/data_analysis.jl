@@ -1,3 +1,4 @@
+using DataFrames, CSV
 
 ##########################################################################################################################################
 # Plotting data as graph
@@ -212,7 +213,7 @@ function precision_cell_count2(file, death_file::String, cell_type::Vector{Int},
     cells_data = vcat(cells_data, deepcopy(deaths))
     sort!(cells_data, :id)
 
-    cells_number = Dict{Int, Vector{Int}}(type => zeros(length(range(start = 0, stop = last_time_step + 1, step = precision))) for type in cell_type)
+    cells_number = Dict{Int, Vector{Int}}(type => zeros(length(range(start = 0, stop = last_time_step, step = precision))) for type in cell_type)
     cell_to_count = [i for i in 1:nbr_start_cell]
     #print(isa(cells_data[cell, :lineage],String15))
 
@@ -228,7 +229,7 @@ function precision_cell_count2(file, death_file::String, cell_type::Vector{Int},
         lineage = cells_data[cell,:lineage]
         
         type = Int(lineage[length(lineage)])
-        time = Int(floor(lineage[length(lineage) - 1]*(1/precision))+(1/precision))
+        time = Int(floor(lineage[length(lineage) - 1]*(1/precision))+(1/precision)) + 1
         id = Int(lineage[length(lineage) - 2])
 
         if length(lineage) >= 6
@@ -247,7 +248,7 @@ function precision_cell_count2(file, death_file::String, cell_type::Vector{Int},
                 
         elseif length(lineage) == 3
             if id in cell_to_count
-                cells_number[type][1:(time)] = cells_number[type][1:(time)] .+ 1
+                cells_number[type][1:(time-1)] = cells_number[type][1:(time-1)] .+ 1
                 filter!(!=(id), cell_to_count)
             end
         end    
@@ -390,4 +391,22 @@ function get_adj_list_all_cells2(data, last_id, death_file)
     end
 
     return adj_list, division_type
+end
+
+
+
+function store_cellcount(file::String, output_file::String, count_func::Function, index::Vector{Int}, last_time_step::Int, nbr_cell::Int; precision::Float64 = 1.0)
+
+    DictofDict = Dict{Int, Dict}(x => Dict() for x in index)
+    for i in index
+
+        data_file = file*"/output_run_"*string(i)
+        death_file = file*"/output_death_run_"*string(i)
+        
+        DictofDict[i] = count_func(data_file, death_file, [1, 2, 3, 4, 5], last_time_step, nbr_cell, precision) 
+    end
+    
+    save(output_file,"DictofDict"*string(index[1])*"_"*string(index[length(index)]), DictofDict)
+    return (output_file, "DictofDict"*string(index[1])*"_"*string(index[length(index)]))
+
 end
