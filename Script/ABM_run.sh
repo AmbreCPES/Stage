@@ -65,7 +65,7 @@ done
 #Création fichier log 
 LOG=/home/ajaeger/Documents/githubrepos/Stage/log
 OUT=/home/ajaeger/Documents/githubrepos/Stage
-SCRIPT=/home/ajaeger/Documents/githubrepos/Stage/execute_run_ABM.jl
+SCRIPT=/home/ajaeger/Documents/githubrepos/Stage/Script/execute_run_ABM.jl
 
 if [ ! -d $LOG ] ; then mkdir $LOG ; fi
 if [ ! -d $LOG/Param_${param} ] ; then mkdir $LOG/Param_${param} ; fi
@@ -83,9 +83,10 @@ do
 	if [ $data_overwrite = "true" ] || [ ! -f ${OUT}/Param_${param}/output_run_${ind} ]
 	then 
 		
-		output_file="${OUT}/Param_${param}/output_run_${ind}"
-		output_death_file="${OUT}/Param_${param}/output_death_run_${ind}"
-
+		output_file="${OUT}/Param_${param}/Data/output_run_${ind}"
+		output_death_file="${OUT}/Param_${param}/Data/output_death_run_${ind}"
+		
+		echo -e "\n############ BEGIN LOG ##########\n" >> $LOG/Param_${param}/run_${ind} 2>&1
 		echo -e "Dead cells information stored in: $output_death_file \nCells information stored in: $output_file \n" >> $LOG/Param_${param}/run_${ind}  2>&1
 
 		echo -e "\n############ PARAMETER FILE ##########\n" >> $LOG/Param_${param}/run_${ind} 2>&1
@@ -96,7 +97,7 @@ do
 
 	else
 
-		echo -e "\n${OUT}/Param_${param}/output_run_${ind} already exists and overwrite not allowed, to overwrite add the option -ow "true" " >> $LOG/Param_${param}/run_${ind}  2>&1
+		echo -e "\n${OUT}/Param_${param}/Data/output_run_${ind} already exists and overwrite not allowed, to overwrite add the option -ow "true" " >> $LOG/Param_${param}/run_${ind}  2>&1
 		exit 0
 	fi
 done

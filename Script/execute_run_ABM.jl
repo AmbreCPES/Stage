@@ -5,7 +5,7 @@ output_file = ""
 output_death_file = ""
 n_steps = 100
 
-print(ARGS)
+print("Arguments provided to execute_run_ABM.jl [n_steps, parameters_file, output_file, output_death_file]:", ARGS)
 if length(ARGS) == 4
     n_steps=parse(Int64, ARGS[1])
     parameters_file = ARGS[2]
