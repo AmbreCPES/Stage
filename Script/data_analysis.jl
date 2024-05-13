@@ -257,7 +257,211 @@ function precision_cell_count2(file, death_file::String, cell_type::Vector{Int},
     return cells_number
 end
 
+###############################################################
+#                LINEAGE NEWICK FORMATING
+###############################################################
 
+function find_root(lineage::Vector{Vector{Float64}}, root_id::Float64; cell_count::Int = 1) # une fonction qui trouve dans une lste de liste les vecteur commencant par un nombre donnée
+    cell_found = []
+    for x in eachindex(lineage)
+        if lineage[x][1] == root_id
+            push!(cell_found, x)
+            if length(cell_found) == cell_count
+                return cell_found
+            end
+        end
+    end
+    return cell_found
+end
+
+function find_cell(cells_data::DataFrame, cell_id)
+    return findfirst(x -> x == cell_id, cells_data.id)
+end
+
+function daughters_id(lineage::Vector{Vector{Float64}}, mother_row::Int, pos::Int)
+    time_div = lineage[mother_row][pos + 1]
+    if (length(lineage[mother_row]) - pos) >= 6
+        for id in range(start = pos, stop = length(lineage[mother_row]) - 6, step = 3) # the division for both daughters happens at the same time because in lineage we store the time when the mother cell divides so the next id in lineage is different
+            if lineage[mother_row][id] != lineage[mother_row][id + 3]
+                time_distance_mother = round(lineage[mother_row][id + 4] - time_div, digits = 3)
+                return ((lineage[mother_row][id + 3], time_distance_mother), (lineage[mother_row][id + 3] + 1, time_div)) #(id_daughter_1, time of mother), id_daughter_2)
+            end
+        end
+    else 
+        if lineage[mother_row][pos] != lineage[mother_row][pos + 3]
+            time_distance_mother = round(lineage[mother_row][pos + 4] - time_div, digits = 3)
+            return ((lineage[mother_row][pos + 3], time_distance_mother), (lineage[mother_row][pos + 3] + 1, time_div)) #(id_daughter_1, time of mother), (id_daughter_2, division_time))
+        end
+    end
+    return nothing # the cell root_id did not divide
+end
+
+
+function daughters_id_2(lineage::Vector{Vector{Float64}}, mother_row::Int, pos::Int; mother_time::Vector= [])
+    if mother_time == []
+        mother_time = [lineage[mother_row][pos + 1]]
+    end
+    
+    time_div = lineage[mother_row][pos + 1]
+    if (length(lineage[mother_row]) - pos) >= 6
+ # the division for both daughters happens at the same time because in lineage we store the time when the mother cell divides so the next id in lineage is different
+        if lineage[mother_row][pos] != lineage[mother_row][pos + 3]
+            time_distance_mother = round(lineage[mother_row][pos + 4] - mother_time[1], digits = 3)
+            return ((lineage[mother_row][pos + 3], time_distance_mother), (lineage[mother_row][pos + 3] + 1, mother_time[1])) #(id_daughter_1, time of mother), id_daughter_2)
+        end
+    end
+    return time_div # the cell root_id did not divide it,s a transition not a division
+end
+
+function first_div(cell_lineage::Vector, root_id::Float64)
+    ind_root = findfirst(x -> x == root_id, cell_lineage)
+    for i in range(start = ind_root, stop = length(cell_lineage) - 3, step = 3)
+        if cell_lineage[ind_root] != cell_lineage[i + 3]
+            return (ind_root, i + 3)
+        end
+    end
+    return nothing
+end
+
+function newick_lineage(cells_data::DataFrame, lineage::Vector{Vector{Float64}}, root_id::Float64, newick::String; found_row::Int = 0, start_cell::Bool = false)
+    type_dict = Dict()
+
+    if found_row != 0
+        mother_row = found_row
+    else
+        mother_row = find_root(lineage, root_id, cell_count = 1)[1]
+    end
+    
+    ind = first_div(lineage[mother_row], root_id)
+
+    if (length(newick) == 0) & (start_cell == false)
+        newick = string(Int(root_id))*";"
+        type_dict[string(Int(root_id))] = lineage[mother_row][ind[1] + 2]
+        type_dict[string(Int(lineage[mother_row][ind[2]]))] = lineage[mother_row][ind[2] + 2]
+        start_pos = ind[2] - 3
+        
+    elseif (length(newick) == 0) & (start_cell == true)
+        newick = "("*string(Int(lineage[mother_row][ind[2]]))*":"*string(round(lineage[mother_row][ind[2] + 1] - lineage[mother_row][ind[1] + 1], digits=3))*")"*string(Int(root_id))*";"
+        type_dict[string(Int(root_id))] = lineage[mother_row][ind[1] + 2]
+        type_dict[string(Int(lineage[mother_row][ind[2]]))] = lineage[mother_row][ind[2] + 2]
+        start_pos = ind[2]
+    else
+        start_pos = 4
+    end
+
+    for ids in range(start = start_pos, stop = length(lineage[mother_row]) - 3, step = 3)
+        root_id = string(Int(lineage[mother_row][ids]))
+        daughters = daughters_id(lineage, mother_row, ids)
+        
+        if daughters != nothing
+            type_dict[string(Int(daughters[1][1]))] = lineage[mother_row][ids + 5]
+            row_daughter_2 = find_root(lineage, daughters[2][1])
+
+            if row_daughter_2 != []
+                time_daughter_2 = ":"*string(round(lineage[row_daughter_2[1]][2] - daughters[2][2], digits = 3))
+                type_dict[string(Int(daughters[2][1]))] = lineage[row_daughter_2[1]][3]
+                
+            else
+                cell_row_2 = find_cell(cells_data, daughters[2][1])
+                time_daughter_2 = ":"*string(round(lineage[cell_row_2][length(lineage[cell_row_2]) - 1] - daughters[2][2], digits = 3))
+                type_dict[string(Int(lineage[cell_row_2][length(lineage[cell_row_2]) - 2]))] = lineage[cell_row_2][length(lineage[cell_row_2])]
+                
+            end
+            
+            root_in_newick = findfirst(root_id, newick)[1]
+            
+            newick = newick[1:(root_in_newick - 1)]*"("*string(Int(daughters[1][1]))*":"*string(daughters[1][2])*","*string(Int(daughters[2][1]))*time_daughter_2*")"*newick[root_in_newick:length(newick)]
+            if row_daughter_2 != []
+                
+                newick,sub_type_dict= newick_lineage(cells_data, lineage, daughters[2][1], newick; found_row = row_daughter_2[1], start_cell = false)
+                merge(type_dict, sub_type_dict)
+            end
+        end
+    end
+    return newick, type_dict
+end
+
+
+function newick_lineage_2(cells_data::DataFrame, lineage::Vector{Vector{Float64}}, root_id::Float64, newick::String; found_row::Int = 0, start_cell::Bool = false)
+    type_dict = Dict()
+
+    if found_row != 0
+        mother_row = found_row
+    else
+        mother_row = find_root(lineage, root_id, cell_count = 1)[1]
+    end
+    
+    ind = first_div(lineage[mother_row], root_id)
+
+    if (length(newick) == 0) & (start_cell == false)
+        newick = string(Int(root_id))*";"
+        type_dict[string(Int(root_id))] = lineage[mother_row][ind[1] + 2]
+        type_dict[string(Int(lineage[mother_row][ind[2]]))] = lineage[mother_row][ind[2] + 2]
+        start_pos = ind[2] - 3
+        
+    elseif (length(newick) == 0) & (start_cell == true)
+        newick = "("*string(Int(lineage[mother_row][ind[2]]))*":"*string(round(lineage[mother_row][ind[2] + 1] - lineage[mother_row][ind[1] + 1], digits=3))*")"*string(Int(root_id))*";"
+        type_dict[string(Int(root_id))] = lineage[mother_row][ind[1] + 2]
+        type_dict[string(Int(lineage[mother_row][ind[2]]))] = lineage[mother_row][ind[2] + 2]
+        start_pos = ind[2]
+    else
+        start_pos = 4
+    end
+    cell_times = []
+    for ids in range(start = start_pos, stop = length(lineage[mother_row]) - 3, step = 3)
+        root_id = string(Int(lineage[mother_row][ids]))
+        daughters = daughters_id_2(lineage, mother_row, ids; mother_time = cell_times)
+        
+        if typeof(daughters) != Float64
+            type_dict[string(Int(daughters[1][1]))] = lineage[mother_row][ids + 5]
+            row_daughter_2 = find_root(lineage, daughters[2][1])
+
+            if row_daughter_2 != []
+                time_daughter_2 = ":"*string(round(lineage[row_daughter_2[1]][2] - daughters[2][2], digits = 3))
+                type_dict[string(Int(daughters[2][1]))] = lineage[row_daughter_2[1]][3]
+                
+            else
+                cell_row_2 = find_cell(cells_data, daughters[2][1])
+                time_daughter_2 = ":"*string(round(lineage[cell_row_2][length(lineage[cell_row_2]) - 1] - daughters[2][2], digits = 3))
+                type_dict[string(Int(lineage[cell_row_2][length(lineage[cell_row_2]) - 2]))] = lineage[cell_row_2][length(lineage[cell_row_2])]
+                
+            end
+            
+            root_in_newick = findfirst(root_id, newick)[1]
+            
+            newick = newick[1:(root_in_newick - 1)]*"("*string(Int(daughters[1][1]))*":"*string(daughters[1][2])*","*string(Int(daughters[2][1]))*time_daughter_2*")"*newick[root_in_newick:length(newick)]
+            if row_daughter_2 != []
+                
+                newick,sub_type_dict= newick_lineage(cells_data, lineage, daughters[2][1], newick; found_row = row_daughter_2[1], start_cell = false)
+                merge(type_dict, sub_type_dict)
+            end
+        else
+            push!(cell_times, daughters)
+        end
+    end
+    return newick, type_dict
+end
+
+function stem_newick_lineage(cells_data::DataFrame, lineage::Vector{Vector{Float64}}, root_id::Float64, stem_cells_id)
+    if root_id in stem_cells_id
+        mother_rows = find_root(lineage, root_id; cell_count = 2)
+        newick_1,type_dict_1 = newick_lineage_2(cells_data, lineage, root_id, ""; found_row = mother_rows[1], start_cell = true)[1:2]
+        
+        newick_2,type_dict_2 = newick_lineage_2(cells_data, lineage, root_id, ""; found_row = mother_rows[2], start_cell = true)[1:2]
+        print(newick_2)
+        print(type_dict_2)
+        root_in_newick_2 = findfirst(")"*string(Int(root_id))*";", newick_2)[1]
+        root_in_newick_1 = findfirst(")"*string(Int(root_id))*";", newick_1)[1]
+
+        full_newick = newick_1[1:(root_in_newick_1 - 1)]*","*newick_2[2:(root_in_newick_2 - 1)]*newick_1[root_in_newick_1:length(newick_1)]
+        type_dict = merge(type_dict_1, type_dict_2)
+
+        return full_newick,type_dict
+    else
+        return "not a stem cell"
+    end
+
+end
 
 ###########
 # TO TEST

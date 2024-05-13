@@ -310,18 +310,27 @@ function division2!(model::ABM, cell::HematopoeiticCell, event_time::Real)
     for event in eachindex(cell_state)
         #on regarde la valeur de next event en fonction on va choisir 
         if cell_state[event] == 1
+            if ttd[event] < cell.ttnd
+                ttd[event] = cell.ttnd
+            end
             add_agent!(
             HematopoeiticCell(id_daughter[event], cell.type, ttd[event], ttnd[event], ttnt[event],"Death" , ttd[event], gen, lineage[event]),
             model
         )
 
         elseif cell_state[event] == 2
+            if ttnd[event] < cell.ttnd
+                ttnd[event] = cell.ttnd
+            end
             add_agent!(
             HematopoeiticCell(id_daughter[event], cell.type, ttd[event], ttnd[event], ttnt[event],"Division" ,ttnd[event] , gen, lineage[event]),
             model
         )
 
         else
+            if ttnt[event] < cell.ttnd
+                ttnt[event] = cell.ttnd
+            end
             add_agent!(
             HematopoeiticCell(id_daughter[event], cell.type, ttd[event], ttnd[event], ttnt[event], "Transition", ttnt[event], gen, lineage[event]),
             model
