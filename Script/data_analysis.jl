@@ -420,7 +420,6 @@ function newick_lineage_2(cells_data::DataFrame, lineage::Vector{Vector{Float64}
     for ids in range(start = start_pos, stop = length(lineage[mother_row]) - 4, step = 3)
         root_id = string(Int(lineage[mother_row][ids]))
         daughters = daughters_id_2(lineage, mother_row, ids; mother_time = cell_times)
-        print()
         
         if typeof(daughters) == Tuple{Tuple{Float64, Float64}, Tuple{Float64, Float64}}
             type_dict[string(Int(daughters[1][1]))] = lineage[mother_row][ids + 5]
@@ -442,7 +441,6 @@ function newick_lineage_2(cells_data::DataFrame, lineage::Vector{Vector{Float64}
             
             newick = newick[1:(root_in_newick - 1)]*"("*string(Int(daughters[1][1]))*":"*string(daughters[1][2])*","*string(Int(daughters[2][1]))*time_daughter_2*")"*newick[root_in_newick:length(newick)]
             if row_daughter_2 != []
-                print("tteeessss")
                 newick,sub_type_dict= newick_lineage(cells_data, lineage, daughters[2][1], newick; found_row = row_daughter_2[1], start_cell = false)
                 merge(type_dict, sub_type_dict)
             end    
@@ -459,8 +457,6 @@ function stem_newick_lineage(cells_data::DataFrame, lineage::Vector{Vector{Float
         newick_1,type_dict_1 = newick_lineage_2(cells_data, lineage, root_id, ""; found_row = mother_rows[1], start_cell = true)[1:2]
         
         newick_2,type_dict_2 = newick_lineage_2(cells_data, lineage, root_id, ""; found_row = mother_rows[2], start_cell = true)[1:2]
-        print(newick_2)
-        print(type_dict_2)
         root_in_newick_2 = findfirst(")"*string(Int(root_id))*";", newick_2)[1]
         root_in_newick_1 = findfirst(")"*string(Int(root_id))*";", newick_1)[1]
 
