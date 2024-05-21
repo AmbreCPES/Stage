@@ -35,13 +35,12 @@ We will first use this process to model Lymphocyte differentiation
 Base.@kwdef mutable struct ModelParameters
     s::Int = 0
     n_steps::Int = 40
-    activation_rate::Float64 = 0.007
     adata::Vector{Symbol} = [:type, :lineage]
     deaths::DataFrame = DataFrame(id = [], type = [], lineage = [])
     nbr_state::Integer = 6
     death_file::String =  ""
     matrix::Matrix = zeros(nbr_state, nbr_state) 
-    pool::Int = 100
+    
     ttnd_parameters::Vector{Tuple{Float64, Float64}} = []
     ttnt_parameters::Vector{Vector{Float64}} = []
     ttd_parameters::Vector{Tuple{Float64, Float64}} =  []
