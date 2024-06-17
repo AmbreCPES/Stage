@@ -1,0 +1,4 @@
+division = (110, 20)
+activation = (90, 20)
+differentiation = (100, 20)
+quiescence = (10, 20)
